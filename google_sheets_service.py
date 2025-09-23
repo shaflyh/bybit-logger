@@ -141,9 +141,15 @@ class GoogleSheetsService:
             headers = list(data[0].keys())
             values = [headers]  # Header row
 
-            # Data rows
+            # Data rows - ensure proper formatting to avoid apostrophes
             for row in data:
-                values.append([str(row.get(header, '')) for header in headers])
+                formatted_row = []
+                for header in headers:
+                    cell_value = row.get(header, '')
+                    # Convert to string and strip any existing apostrophes
+                    cell_value = str(cell_value).lstrip("'")
+                    formatted_row.append(cell_value)
+                values.append(formatted_row)
 
             # Update the sheet
             worksheet.update(values)
@@ -183,8 +189,8 @@ class GoogleSheetsService:
             header_row = worksheet.row_values(1)
             for i, header in enumerate(header_row):
                 # Calculate minimum width based on header length
-                # 20 pixels per character, minimum 100
-                min_width = max(len(header) * 20, 100)
+                # 10 pixels per character, minimum 100
+                min_width = max(len(header) * 10, 100)
                 try:
                     worksheet.update_dimension_properties(
                         dimension='COLUMNS',

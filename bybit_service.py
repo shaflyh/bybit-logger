@@ -107,33 +107,6 @@ class BybitService:
             executions, positions)
         return enhanced_positions
 
-    def get_open_positions(self) -> List[Dict]:
-        """Get current open positions"""
-        print("📊 Fetching open positions...")
-        try:
-            response = self.session.get_positions(
-                category="linear",
-                settleCoin="USDT"
-            )
-            self.log_response(response, "open_positions")
-
-            if response.get('retCode') == 0:
-                all_positions = response.get('result', {}).get('list', [])
-                # Filter only positions with actual size (not zero)
-                open_positions = [
-                    pos for pos in all_positions
-                    if float(pos.get('size', 0)) != 0
-                ]
-                print(f"✅ Found {len(open_positions)} open positions")
-                return open_positions
-            else:
-                print(f"❌ API Error: {response.get('retMsg')}")
-                return []
-
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            return []
-
     def get_spot_trades(self, days_back: Optional[int] = None) -> List[Dict]:
         """Get spot trading history"""
         days_back = days_back or Config.SPOT_DAYS_BACK
@@ -210,75 +183,127 @@ class BybitService:
         enhanced_positions = []
 
         for position in positions:
-            order_id = position.get('orderId')
+            position_order_id = position.get('orderId')
             symbol = position.get('symbol')
+            side = position.get('side')
+            qty = float(position.get('qty', 0))
+            avg_entry_price = float(position.get('avgEntryPrice', 0))
+            avg_exit_price = float(position.get('avgExitPrice', 0))
 
-            # Find all executions for this position
-            # Try to match by order ID first, then by symbol and timing
-            position_executions = []
+            # Find all executions for this symbol around the position time
+            position_created_time = int(position.get('createdTime', 0))
+            position_updated_time = int(position.get('updatedTime', 0))
 
-            # Method 1: Match by order ID (most accurate)
+            # Get all executions for this symbol within a reasonable time window
+            # Extend the window to capture opening positions that might be hours/days earlier
+            time_window = 7 * 24 * 60 * 60 * 1000  # 7 days in milliseconds
+            symbol_executions = []
+
             for exec in executions:
-                if exec.get('orderId') == order_id:
-                    position_executions.append(exec)
+                if exec.get('symbol') == symbol:
+                    exec_time = int(exec.get('execTime', 0))
+                    # Include executions within the time window
+                    if position_created_time - time_window <= exec_time <= position_updated_time + 60000:
+                        symbol_executions.append(exec)
 
-            # Method 2: If no exact order match, try symbol and time proximity
-            if not position_executions and symbol:
-                position_created_time = int(position.get('createdTime', 0))
-                position_updated_time = int(position.get('updatedTime', 0))
-
-                for exec in executions:
-                    if exec.get('symbol') == symbol:
-                        exec_time = int(exec.get('execTime', 0))
-                        # Check if execution time is within reasonable range of position
-                        if position_created_time - 60000 <= exec_time <= position_updated_time + 60000:
-                            position_executions.append(exec)
-
-            if position_executions:
+            if symbol_executions:
                 # Sort executions by time
-                position_executions.sort(
-                    key=lambda x: int(x.get('execTime', 0)))
+                symbol_executions.sort(key=lambda x: int(x.get('execTime', 0)))
 
-                # Get first execution (position open) and last execution (position close)
-                first_exec = position_executions[0]
-                last_exec = position_executions[-1]
+                # For futures positions, we need to find the opening and closing executions
+                # The position side tells us what the CLOSING action was
+                # So if position side is "Sell", the opening was "Buy" and vice versa
+                opening_side = "Buy" if side == "Sell" else "Sell"
+                closing_side = side
 
-                # Calculate actual hold time
-                open_time = datetime.fromtimestamp(
-                    int(first_exec['execTime'])/1000)
-                close_time = datetime.fromtimestamp(
-                    int(last_exec['execTime'])/1000)
-                hold_duration = close_time - open_time
+                # Find opening executions (opposite side)
+                opening_executions = [
+                    exec for exec in symbol_executions
+                    if exec.get('side') == opening_side and exec.get('execType') == 'Trade'
+                ]
 
-                # Enhanced position data
-                enhanced_position = position.copy()
-                enhanced_position.update({
-                    'actualOpenTime': first_exec['execTime'],
-                    'actualCloseTime': last_exec['execTime'],
-                    'actualHoldDuration': str(hold_duration),
-                    'executionCount': len(position_executions),
-                    'totalExecQty': sum(float(exec.get('execQty', 0)) for exec in position_executions),
-                    'hasExecutionMatch': True
-                })
+                # Find closing executions (same side as position)
+                closing_executions = [
+                    exec for exec in symbol_executions
+                    if exec.get('side') == closing_side and exec.get('execType') == 'Trade'
+                ]
 
-                enhanced_positions.append(enhanced_position)
-            else:
-                # Fallback to original timing if no executions found
-                fallback_position = position.copy()
-                fallback_position.update({
-                    'actualOpenTime': position.get('createdTime'),
-                    'actualCloseTime': position.get('updatedTime'),
-                    'actualHoldDuration': 'Unknown (no execution match)',
-                    'executionCount': 0,
-                    'totalExecQty': position.get('qty', 0),
-                    'hasExecutionMatch': False
-                })
-                enhanced_positions.append(fallback_position)
+                # Try to match by order ID first for closing execution
+                closing_exec = None
+                for exec in closing_executions:
+                    if exec.get('orderId') == position_order_id:
+                        closing_exec = exec
+                        break
+
+                # If no exact order ID match, use the closest execution by price or time
+                if not closing_exec and closing_executions:
+                    # Find execution closest to avg exit price
+                    closest_exec = min(
+                        closing_executions,
+                        key=lambda x: abs(
+                            float(x.get('execPrice', 0)) - avg_exit_price)
+                    )
+                    closing_exec = closest_exec
+
+                # For opening execution, find the one closest to avg entry price
+                opening_exec = None
+                if opening_executions:
+                    closest_exec = min(
+                        opening_executions,
+                        key=lambda x: abs(
+                            float(x.get('execPrice', 0)) - avg_entry_price)
+                    )
+                    opening_exec = closest_exec
+
+                # Calculate hold time if we have both opening and closing
+                if opening_exec and closing_exec:
+                    open_time = datetime.fromtimestamp(
+                        int(opening_exec['execTime'])/1000)
+                    close_time = datetime.fromtimestamp(
+                        int(closing_exec['execTime'])/1000)
+                    hold_duration = close_time - open_time
+
+                    # Enhanced position data
+                    enhanced_position = position.copy()
+                    enhanced_position.update({
+                        'actualOpenTime': opening_exec['execTime'],
+                        'actualCloseTime': closing_exec['execTime'],
+                        'actualHoldDuration': str(hold_duration),
+                        'executionCount': len(symbol_executions),
+                        'totalExecQty': sum(float(exec.get('execQty', 0)) for exec in symbol_executions),
+                        'hasExecutionMatch': True,
+                        'openingOrderId': opening_exec.get('orderId'),
+                        'closingOrderId': closing_exec.get('orderId'),
+                        'matchMethod': 'Price+Time Match'
+                    })
+
+                    enhanced_positions.append(enhanced_position)
+                    continue
+
+            # Fallback to original timing if no good match found
+            fallback_position = position.copy()
+            created_time = datetime.fromtimestamp(
+                int(position.get('createdTime', 0))/1000)
+            updated_time = datetime.fromtimestamp(
+                int(position.get('updatedTime', 0))/1000)
+            hold_duration = updated_time - created_time
+
+            fallback_position.update({
+                'actualOpenTime': position.get('createdTime'),
+                'actualCloseTime': position.get('updatedTime'),
+                'actualHoldDuration': str(hold_duration) if hold_duration.total_seconds() > 1 else 'Very Short Trade',
+                'executionCount': len(symbol_executions),
+                'totalExecQty': position.get('qty', 0),
+                'hasExecutionMatch': False,
+                'matchMethod': 'Position Times (Fallback)'
+            })
+            enhanced_positions.append(fallback_position)
 
         matched_count = sum(
             1 for pos in enhanced_positions if pos.get('hasExecutionMatch'))
         print(
             f"✅ Enhanced {len(enhanced_positions)} positions ({matched_count} with execution timing)")
+
         return enhanced_positions
 
     def test_connection(self) -> bool:
