@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
 PyBit WebSocket Real-Time Trading Logger for Bybit
-Focuses on real-time execution logging for trading analysis
+
+Connects to Bybit's private WebSocket streams to provide real-time updates
+to a Google Sheet. It manages three separate sheets:
+1.  Real-Time Log: A detailed, append-only log of every trade execution.
+2.  Live Open Positions: A snapshot of all current open futures positions.
+3.  Live Wallet Balance: A snapshot of current asset balances.
 """
 
-import json
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -15,338 +19,191 @@ from google_sheets_service import GoogleSheetsService
 
 
 class WebSocketService:
-    """Handle PyBit WebSocket connections and subscriptions"""
+    """Handles PyBit WebSocket connection and stream subscriptions."""
 
     def __init__(self, callback_handler):
         self.callback_handler = callback_handler
-        self.ws = None
-        self.is_connected = False
-
-        # Initialize PyBit WebSocket
         self.ws = WebSocket(
             testnet=Config.BYBIT_USE_TESTNET,
             channel_type="private",
             api_key=Config.BYBIT_API_KEY,
             api_secret=Config.BYBIT_API_SECRET
         )
-
-        env_name = "TESTNET" if Config.BYBIT_USE_TESTNET else "MAINNET"
-        print(f"PyBit WebSocket initialized - {env_name}")
+        env = "TESTNET" if Config.BYBIT_USE_TESTNET else "MAINNET"
+        print(f"PyBit WebSocket initialized for {env}")
 
     def start_streams(self):
-        """Start execution stream only"""
+        """Starts all required WebSocket streams."""
         try:
-            # Subscribe to execution stream only
-            print("Starting execution stream...")
-            self.ws.execution_stream(
-                callback=self.callback_handler.handle_execution)
-
-            self.is_connected = True
-            print("WebSocket execution stream started successfully")
-
+            print("📡 Subscribing to WebSocket streams...")
+            self.ws.execution_stream(callback=self.callback_handler.handle_execution)
+            print("   - Subscribed to 'execution' stream.")
+            self.ws.position_stream(callback=self.callback_handler.handle_position)
+            print("   - Subscribed to 'position' stream.")
+            self.ws.wallet_stream(callback=self.callback_handler.handle_wallet)
+            print("   - Subscribed to 'wallet' stream.")
+            print("\n✅ All streams started successfully.")
+            return True
         except Exception as e:
-            print(f"Error starting WebSocket stream: {e}")
+            print(f"❌ Error starting WebSocket streams: {e}")
             return False
 
-        return True
-
     def stop_streams(self):
-        """Stop WebSocket streams"""
         if self.ws:
-            try:
-                self.ws.exit()
-                print("WebSocket stream stopped")
-            except Exception as e:
-                print(f"Error stopping stream: {e}")
+            self.ws.exit()
+            print("WebSocket streams stopped.")
 
 
 class DataProcessor:
-    """Process WebSocket data into spreadsheet format"""
+    """Processes and formats raw WebSocket data for Google Sheets."""
+
+    EXECUTION_HEADERS = [
+        "Timestamp", "Category", "Symbol", "Side", 
+        "PnL", "Fee",
+        "Exec Price", "Exec Qty", "Exec Value", 
+        "Create Type", "Order Type", "Maker/Taker", 
+        "OrderID", "ExecutionID"
+    ]
+    POSITION_HEADERS = [ "Symbol", "Side", "Size", "Entry Price", "Mark Price", "Value (USD)", "Unrealized PnL", "Leverage", "Liq. Price", "Updated" ]
+    WALLET_HEADERS = [ "Coin", "Balance", "Available", "Value (USD)" ]
 
     @staticmethod
-    def format_execution_for_sheets(execution: Dict) -> Optional[Dict]:
-        """Format execution data for real-time futures log"""
+    def format_execution(execution: Dict) -> Optional[Dict]:
+        """Formats an execution message with a supervisor-focused column order."""
         try:
-            # Extract key fields
-            symbol = execution.get("symbol", "")
-            side = execution.get("side", "")
-            exec_qty = execution.get("execQty", "0")
-            exec_price = execution.get("execPrice", "0")
-            exec_fee = execution.get("execFee", "0")
-            exec_time = execution.get("execTime", "0")
-            exec_type = execution.get("execType", "")
-            exec_pnl = execution.get("execPnl", "0")
-            order_type = execution.get("orderType", "")
-            is_maker = execution.get("isMaker", False)
-            category = execution.get("category", "")
-
-            # Skip non-trade executions (funding, etc.)
-            if exec_type not in ["Trade"]:
-                return None
-
-            # Calculate position value for this execution
-            try:
-                qty = float(exec_qty)
-                price = float(exec_price)
-                position_value = qty * price
-            except (ValueError, TypeError):
-                position_value = 0.0
-
-            # Format timestamp
-            try:
-                exec_datetime = datetime.fromtimestamp(int(exec_time)/1000)
-                formatted_time = exec_datetime.strftime(
-                    '%Y-%m-%d %H:%M:%S.%f')[:-3]
-            except (ValueError, TypeError):
-                formatted_time = datetime.now().strftime(
-                    '%Y-%m-%d %H:%M:%S.%f')[:-3]
-
-            # Determine if this is opening or closing trade
-            trade_type = "Close" if float(exec_pnl) != 0 else "Open"
+            if execution.get("execType") != "Trade": return None
+            
+            exec_price = float(execution.get("execPrice", 0))
+            exec_qty = float(execution.get("execQty", 0))
+            exec_value = float(execution.get("execValue", 0))
+            fee = float(execution.get("execFee", 0))
+            pnl = float(execution.get("execPnl", 0))
 
             return {
-                "Timestamp": formatted_time,
-                "Trade Type": trade_type,
-                "Symbol": symbol,
-                "Side": side,
-                "Quantity": exec_qty,
-                "Price": exec_price,
-                "Position Value": f"{position_value:.2f}",
-                "Fee Cost": exec_fee,
-                "Profit/Loss": exec_pnl if trade_type == "Close" else "0",
-                "Order Type": order_type,
-                "Maker/Taker": "Maker" if is_maker else "Taker",
-                "Category": category,
-                "Execution ID": execution.get("execId", ""),
-                "Logged At": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                "Timestamp": datetime.fromtimestamp(int(execution.get("execTime", 0)) / 1000).strftime('%Y-%m-%d %H:%M:%S'),
+                "Category": execution.get("category", "").capitalize(),
+                "Symbol": execution.get("symbol", ""),
+                "Side": execution.get("side", ""),
+                "PnL": f"{pnl:.8f}",
+                "Fee": f"{fee:.8f}",
+                "Exec Price": f"{exec_price:.4f}",
+                "Exec Qty": f"{exec_qty:.6f}".rstrip('0').rstrip('.'),
+                "Exec Value": f"{exec_value:.4f}",
+                "Create Type": execution.get("createType", "N/A"),
+                "Order Type": execution.get("orderType", ""),
+                "Maker/Taker": "Maker" if execution.get("isMaker") else "Taker",
+                "OrderID": execution.get("orderId", ""),
+                "ExecutionID": execution.get("execId", ""),
             }
-
-        except Exception as e:
-            print(f"Error formatting execution: {e}")
+        except (ValueError, TypeError, KeyError) as e:
+            print(f"⚠️  Could not format execution: {e} | Data: {execution}")
             return None
 
     @staticmethod
-    def format_position_for_sheets(position: Dict) -> Optional[Dict]:
-        """Format position data for Google Sheets"""
+    def format_position(position: Dict) -> Optional[Dict]:
         try:
-            symbol = position.get("symbol", "")
-            side = position.get("side", "")
-            size = position.get("size", "0")
-            entry_price = position.get("entryPrice", "0")
-            mark_price = position.get("markPrice", "0")
-            unrealized_pnl = position.get("unrealisedPnl", "0")
-            leverage = position.get("leverage", "")
-            position_value = position.get("positionValue", "0")
-            updated_time = position.get("updatedTime", "0")
-            category = position.get("category", "")
-
-            # Skip empty positions
-            if float(size) == 0:
-                return None
-
-            # Format timestamp
-            try:
-                update_datetime = datetime.fromtimestamp(
-                    int(updated_time)/1000)
-                formatted_time = update_datetime.strftime(
-                    '%Y-%m-%d %H:%M:%S.%f')[:-3]
-            except (ValueError, TypeError):
-                formatted_time = datetime.now().strftime(
-                    '%Y-%m-%d %H:%M:%S.%f')[:-3]
-
-            return {
-                "Timestamp": formatted_time,
-                "Category": category,
-                "Symbol": symbol,
-                "Side": side,
-                "Size": size,
-                "Entry Price": entry_price,
-                "Mark Price": mark_price,
-                "Position Value": position_value,
-                "Unrealized PnL": unrealized_pnl,
-                "Leverage": leverage,
-                "Updated At": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
-
-        except Exception as e:
-            print(f"Error formatting position: {e}")
+            if float(position.get("size", "0")) == 0: return None
+            return { "Symbol": position.get("symbol", ""), "Side": position.get("side", ""), "Size": position.get("size", "0"), "Entry Price": position.get("entryPrice", "0"), "Mark Price": position.get("markPrice", "0"), "Value (USD)": position.get("positionValue", "0"), "Unrealized PnL": position.get("unrealisedPnl", "0"), "Leverage": position.get("leverage", ""), "Liq. Price": position.get("liqPrice", "0"), "Updated": datetime.fromtimestamp(int(position.get("updatedTime", 0)) / 1000).strftime('%H:%M:%S'), }
+        except (ValueError, TypeError, KeyError) as e:
+            print(f"⚠️  Could not format position: {e} | Data: {position}")
             return None
+
+    @staticmethod
+    def format_wallet(wallet_data: Dict) -> List[Dict]:
+        formatted_balances = []
+        try:
+            for coin in wallet_data.get('coin', []):
+                if float(coin.get("walletBalance", 0)) > 0:
+                    formatted_balances.append({ "Coin": coin.get("coin", ""), "Balance": coin.get("walletBalance", "0"), "Available": coin.get("availableToWithdraw", "0"), "Value (USD)": coin.get("usdValue", "0"), })
+            return formatted_balances
+        except (ValueError, TypeError, KeyError) as e:
+            print(f"⚠️  Could not format wallet data: {e} | Data: {wallet_data}")
+            return []
 
 
 class CallbackHandler:
-    """Handle WebSocket callbacks and log to Google Sheets"""
+    """Receives WebSocket messages, processes them, and updates Google Sheets."""
 
     def __init__(self, sheets_service: GoogleSheetsService):
-        self.sheets_service = sheets_service
-        self.logged_executions = set()
+        self.sheets = sheets_service
+        self.logged_exec_ids = set()
+        self.open_positions = {}
 
-    def handle_execution(self, message):
-        """Handle execution stream messages"""
+    def handle_execution(self, message: Dict):
         try:
-            # PyBit wraps the message, extract the data
-            if isinstance(message, dict) and 'data' in message:
-                executions = message['data']
-            else:
-                print(f"Unexpected execution message format: {message}")
-                return
-
-            for execution in executions:
+            for execution in message.get("data", []):
+                # print(execution)  # Debug print to see the execution data
                 exec_id = execution.get("execId")
-
-                # Skip if already logged
-                if exec_id in self.logged_executions:
-                    continue
-
-                # Process the execution
-                processed_execution = DataProcessor.format_execution_for_sheets(
-                    execution)
-
-                if processed_execution:
-                    # Log to Google Sheets
-                    success = self.log_execution_to_sheets(processed_execution)
-
-                    if success:
-                        self.logged_executions.add(exec_id)
-                        symbol = execution.get('symbol', 'Unknown')
-                        side = execution.get('side', 'Unknown')
-                        qty = execution.get('execQty', '0')
-                        print(f"✅ Logged execution: {symbol} {side} {qty}")
-                    else:
-                        print(f"❌ Failed to log execution: {exec_id}")
-
+                if exec_id in self.logged_exec_ids: continue
+                formatted_exec = DataProcessor.format_execution(execution)
+                if formatted_exec:
+                    self.sheets.append_data("Real-Time Log", [formatted_exec], headers=DataProcessor.EXECUTION_HEADERS)
+                    self.logged_exec_ids.add(exec_id)
+                    print(f"✅ Logged execution: {formatted_exec['Symbol']} {formatted_exec['Side']}")
         except Exception as e:
             print(f"Error handling execution: {e}")
 
-    def log_execution_to_sheets(self, execution_data: Dict) -> bool:
-        """Log execution to Real-Time Futures Log"""
+    def handle_position(self, message: Dict):
+        updated = False
         try:
-            sheet_name = "Real-Time Futures Log"
-            return self._log_to_sheet(sheet_name, execution_data)
+            for position in message.get("data", []):
+                symbol = position.get("symbol")
+                if not symbol: continue
+                formatted_pos = DataProcessor.format_position(position)
+                if formatted_pos:
+                    self.open_positions[symbol] = formatted_pos
+                    updated = True
+                elif symbol in self.open_positions:
+                    del self.open_positions[symbol]
+                    updated = True
+            if updated:
+                self.sheets.overwrite_data("Live Open Positions", list(self.open_positions.values()), headers=DataProcessor.POSITION_HEADERS)
+                print(f"🔄 Synced {len(self.open_positions)} open positions.")
         except Exception as e:
-            print(f"Error logging execution to sheets: {e}")
-            return False
+            print(f"Error handling position update: {e}")
 
-    def _log_to_sheet(self, sheet_name: str, data: Dict) -> bool:
-        """Generic method to log data to specified sheet"""
+    def handle_wallet(self, message: Dict):
         try:
-            # Connect to spreadsheet if not already connected
-            if not self.sheets_service.spreadsheet:
-                if not self.sheets_service.connect_to_spreadsheet():
-                    print("Failed to connect to Google Sheets")
-                    return False
-
-            # Get or create worksheet
-            worksheet = self.sheets_service.get_or_create_worksheet(sheet_name)
-            if not worksheet:
-                return False
-
-            # Check if sheet is empty (needs headers)
-            existing_data = worksheet.get_all_values()
-            if not existing_data:
-                # Add headers
-                headers = list(data.keys())
-                worksheet.append_row(headers)
-
-                # Format headers
-                if Config.ENABLE_FORMATTING:
-                    worksheet.format('1:1', {
-                        'textFormat': {'bold': True},
-                        'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
-                    })
-
-            # Add the data
-            row_data = list(data.values())
-            worksheet.append_row(row_data)
-
-            return True
-
+            wallet_data = message.get("data", [{}])[0]
+            if not wallet_data: return
+            formatted_balances = DataProcessor.format_wallet(wallet_data)
+            self.sheets.overwrite_data("Live Wallet Balance", formatted_balances, headers=DataProcessor.WALLET_HEADERS)
+            print(f"💰 Synced {len(formatted_balances)} asset balances.")
         except Exception as e:
-            print(f"Error updating worksheet {sheet_name}: {e}")
-            return False
+            print(f"Error handling wallet update: {e}")
 
 
 class PyBitRealTimeLogger:
-    """Main real-time logger using PyBit WebSocket"""
+    """Main application class to orchestrate the WebSocket logger."""
 
     def __init__(self):
-        # Initialize services
+        print("🚀 Initializing PyBit Real-Time Logger...")
         self.sheets_service = GoogleSheetsService()
         self.callback_handler = CallbackHandler(self.sheets_service)
         self.websocket_service = WebSocketService(self.callback_handler)
 
-        print("PyBit Real-Time Logger initialized")
-
-    def load_historical_data(self):
-        """Load historical data using API before starting real-time streams"""
-        print("\n📚 Loading historical data...")
-
-        try:
-            # Get recent data to populate initial context
-            futures_positions = self.bybit_service.get_futures_positions(
-                days_back=1)
-            open_positions = self.bybit_service.get_open_positions()
-
-            print(f"Loaded {len(futures_positions)} recent closed positions")
-            print(f"Loaded {len(open_positions)} current open positions")
-
-            return True
-
-        except Exception as e:
-            print(f"Error loading historical data: {e}")
-            return False
-
     def start(self):
-        """Start the real-time logger"""
-        print("🔴 Starting PyBit Real-Time Trading Logger")
         print("=" * 50)
-
         try:
-            # Validate configuration
             Config.validate()
-
-            # Test Google Sheets connection
             if not self.sheets_service.test_connection():
-                print("Failed to connect to Google Sheets. Check your credentials.")
+                print("❌ Aborting due to Google Sheets connection failure.")
                 return
-
-            # Load historical data first (optional)
-            self.load_historical_data()
-
-            # Start WebSocket streams
-            print("\n📡 Starting real-time WebSocket stream...")
-            if not self.websocket_service.start_streams():
-                print("Failed to start WebSocket stream")
-                return
-
-            print("\n✅ Real-time logging active!")
-            print("📊 Execution updates → 'Real-Time Executions' sheet")
-            print("Press Ctrl+C to stop")
-
-            # Keep the main thread alive
-            while True:
-                time.sleep(1)
-
+            if self.websocket_service.start_streams():
+                print("\n🎉 Real-time logging is now ACTIVE!")
+                print("   - Executions will be appended to 'Real-Time Log'")
+                print("   - Open positions will be synced to 'Live Open Positions'")
+                print("   - Wallet balances will be synced to 'Live Wallet Balance'")
+                print(f"\n🔗 View your sheet at: {self.sheets_service.get_spreadsheet_url()}")
+                print("\nPress Ctrl-C to stop the logger.")
+                while True: time.sleep(1)
         except KeyboardInterrupt:
-            print("\n⏹️ Stopping real-time logger...")
+            print("\n⏹️ User requested shutdown. Stopping logger...")
+        finally:
             self.websocket_service.stop_streams()
-            print("Real-time logger stopped")
-
-        except Exception as e:
-            print(f"Error: {e}")
-            self.websocket_service.stop_streams()
-
-
-def main():
-    """Main entry point"""
-    try:
-        logger = PyBitRealTimeLogger()
-        logger.start()
-
-    except ValueError as e:
-        print(f"Configuration error: {e}")
-    except Exception as e:
-        print(f"Error: {e}")
+            print("Logger has been stopped.")
 
 
 if __name__ == "__main__":
-    main()
+    logger = PyBitRealTimeLogger()
+    logger.start()
