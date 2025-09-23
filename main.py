@@ -1,6 +1,8 @@
-#!/usr/bin/env python3
 """
-Bybit Trading Logger - Simple Main Application
+Bybit Trading Logger - Historical Data Sync
+
+Fetches historical trading data via REST API and syncs it to Google Sheets,
+overwriting the previous data to ensure a clean, up-to-date record.
 """
 
 from config import Config
@@ -10,98 +12,74 @@ from data_processor import DataProcessor
 
 
 def main():
-    """Simple main function to sync Bybit data to Google Sheets"""
+    """Main function to fetch, process, and sync Bybit data."""
 
-    print("🚀 Bybit Trading Logger")
+    print("🚀 Bybit Historical Trading Logger")
     print("=" * 50)
 
     try:
-        # Validate configuration
+        # 1. Initialization
         Config.validate()
         Config.print_config()
 
-        # Initialize services
         print("\n🔧 Initializing services...")
         bybit = BybitService()
         sheets = GoogleSheetsService()
 
-        # Connect to spreadsheet
         if not sheets.connect_to_spreadsheet():
-            print("❌ Failed to connect to Google Sheets")
+            print("❌ Aborting due to Google Sheets connection failure.")
             return
 
-        # Fetch data from Bybit
+        # 2. Fetch Data from Bybit
         print("\n📊 Fetching data from Bybit...")
         wallet_balance = bybit.get_wallet_balance()
         spot_trades = bybit.get_spot_trades()
         futures_positions = bybit.get_futures_positions()
         deposit_withdraw = bybit.get_deposit_withdraw_history()
-        # print(wallet_balance)
-        # print(spot_trades)
-        # print(futures_positions)
-        # print(deposit_withdraw)
 
-        # Process data
-        print("\n🔄 Processing data...")
-        futures_data = DataProcessor.process_futures_data(
+        # 3. Process Data
+        print("\n🔄 Processing data for final logs...")
+        futures_log_data = DataProcessor.process_futures_data(
             futures_positions, wallet_balance)
-        spot_data = DataProcessor.process_spot_data(spot_trades)
-        wallet_flows = DataProcessor.process_wallet_flows(deposit_withdraw)
-        wallet_balance_data = DataProcessor.process_wallet_balance(
-            wallet_balance)
+        spot_log_data = DataProcessor.process_spot_data(spot_trades)
+        wallet_flows_data = DataProcessor.process_wallet_flows(
+            deposit_withdraw)
 
-        # Update Google Sheets
-        print("\n📤 Updating Google Sheets...")
+        # 4. Update Google Sheets
+        print("\n📤 Syncing data to Google Sheets...")
 
-        success_count = 0
+        # The historical logger ALWAYS overwrites the sheets for a clean sync.
+        if futures_log_data:
+            headers = list(futures_log_data[0].keys())
+            sheets.overwrite_data(
+                "Futures History", futures_log_data, headers=headers)
 
-        if futures_data:
-            if sheets.update_worksheet_data("Futures Log", futures_data):
-                success_count += 1
+        if spot_log_data:
+            headers = list(spot_log_data[0].keys())
+            sheets.overwrite_data(
+                "Spot History", spot_log_data, headers=headers)
 
-        if spot_data:
-            if sheets.update_worksheet_data("Spot Log", spot_data):
-                success_count += 1
+        if wallet_flows_data:
+            headers = list(wallet_flows_data[0].keys())
+            sheets.overwrite_data(
+                "Wallet Flows", wallet_flows_data, headers=headers)
 
-        if wallet_flows:
-            if sheets.update_worksheet_data("Wallet Flows", wallet_flows):
-                success_count += 1
-
-        if wallet_balance_data:
-            if sheets.update_worksheet_data("Wallet Balance", wallet_balance_data):
-                success_count += 1
-
-        # Create summary
-        stats = DataProcessor.calculate_trading_stats(
-            futures_data, spot_data, wallet_flows)
-        summary_data = sheets.create_summary_data(stats)
-
-        if summary_data:
-            if sheets.update_worksheet_data("Summary", summary_data):
-                success_count += 1
-
-        # Results
-        print(f"\n🎉 Sync completed! Updated {success_count} sheets")
-
+        # 5. Final Summary
+        print("\n🎉 Sync completed successfully!")
         spreadsheet_url = sheets.get_spreadsheet_url()
         if spreadsheet_url:
-            print(f"📄 Spreadsheet: {spreadsheet_url}")
+            print(f"📄 View your spreadsheet at: {spreadsheet_url}")
 
-        # Print summary
-        print(f"\n📈 Summary:")
-        print(f"   Futures: {len(futures_data)} positions")
-        print(f"   Spot: {len(spot_data)} trades")
-        print(f"   Wallet: {len(wallet_flows)} transactions")
+        print("\n📈 Summary of data synced:")
+        print(
+            f"   - Futures History: {len(futures_log_data)} closed positions")
+        print(f"   - Spot History: {len(spot_log_data)} trades")
+        print(f"   - Wallet Flows: {len(wallet_flows_data)} transactions")
 
     except ValueError as e:
-        print(f"❌ Configuration error: {e}")
-        print("\n📝 Please create a .env file with:")
-        print("BYBIT_API_KEY=your_key")
-        print("BYBIT_API_SECRET=your_secret")
-        print("GOOGLE_SPREADSHEET_ID=your_spreadsheet_id")
-
+        print(f"❌ Configuration Error: {e}")
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ An unexpected application error occurred: {e}")
 
 
 if __name__ == "__main__":
