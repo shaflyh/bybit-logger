@@ -9,10 +9,10 @@ class DataProcessor:
     """
 
     @staticmethod
-    def process_futures_data(positions: List[Dict], wallet_balance: Optional[Dict]) -> List[Dict]:
+    def process_futures_data(positions: List[Dict], wallet_balance: Optional[Dict] = None) -> List[Dict]:
         """
-        Processes closed futures positions to create the 'Futures History' which
-        fulfills the supervisor's requirements for a simple, clean report.
+        Processes closed futures positions to create a clean and ACCURATE 'Futures History' log
+        based on reliably available API data.
         """
         if not positions:
             return []
@@ -20,43 +20,28 @@ class DataProcessor:
         print(
             f"   - Processing {len(positions)} futures positions for 'Futures History'...")
 
-        # Use the most recent total account equity as the 'Initial Capital'
-        total_balance = DataProcessor._extract_total_balance(wallet_balance)
-
         futures_log = []
         for position in positions:
             try:
-                # Requirement: Trade opened and closed time & How long it was held
-                # Note: Uses 'actual' times from the execution matching logic for accuracy
+                # Open/Close Time & Hold Duration from execution matching
                 open_time_ms = int(position.get('actualOpenTime', 0))
                 close_time_ms = int(position.get('actualCloseTime', 0))
                 open_time = datetime.fromtimestamp(open_time_ms / 1000)
                 close_time = datetime.fromtimestamp(close_time_ms / 1000)
                 hold_duration = close_time - open_time
 
-                # Requirement: Profit / loss & Fee cost
+                # Final PnL from the API summary
                 pnl = float(position.get('closedPnl', 0))
-                # Bybit API provides a single 'orderFee' field that sums up open and close fees for a position.
-                total_fee_cost = float(position.get('orderFee', 0))
 
-                # Requirement: Initial Capital & Risk% to Wallet
-                entry_value = float(position.get('maxTradeValue', position.get(
-                    'execValue', 0)))  # Use max value if available
-                risk_percent = (entry_value / total_balance *
-                                100) if total_balance > 0 else 0
+                # Total fee cost from the API summary (Note: often 0 on testnet)
+                total_fee_cost = float(position.get('orderFee', 0))
 
                 futures_log.append({
                     "Open Time": open_time.strftime('%Y-%m-%d %H:%M:%S'),
                     "Close Time": close_time.strftime('%Y-%m-%d %H:%M:%S'),
-                    # Cleanly formatted duration
                     "Hold Duration": str(timedelta(seconds=round(hold_duration.total_seconds()))),
                     "Symbol": position.get('symbol', ''),
-                    # The 'side' in a closed PnL record is the side of the closing trade.
-                    # So, the opening trade was the opposite.
                     "Side": "Buy" if position.get('side') == "Sell" else "Sell",
-                    "Initial Capital (Wallet)": f"{total_balance:.2f}",
-                    "Position Value": f"{entry_value:.2f}",
-                    "Risk % to Wallet": f"{risk_percent:.2f}%",
                     "Profit / Loss": f"{pnl:.4f}",
                     "Fee Cost": f"{total_fee_cost:.4f}",
                 })
@@ -65,7 +50,6 @@ class DataProcessor:
                     f"⚠️  Error processing futures position {position.get('symbol', 'Unknown')}: {e}")
                 continue
 
-        # Sort by most recently closed positions first
         return sorted(futures_log, key=lambda x: x['Close Time'], reverse=True)
 
     @staticmethod
@@ -118,11 +102,8 @@ class DataProcessor:
 
         flow_data = []
         for flow in all_flows:
-            # Determine if it's a deposit or withdrawal by checking for a unique key.
             is_deposit = 'depositId' in flow
-
             try:
-                # The final timestamp for a transaction is 'successAt' for deposits and 'updatedTime' for withdrawals
                 timestamp_ms = int(flow.get('successAt')
                                    or flow.get('updatedTime', 0))
                 timestamp = datetime.fromtimestamp(
@@ -142,18 +123,3 @@ class DataProcessor:
                 continue
 
         return sorted(flow_data, key=lambda x: x['Time'], reverse=True)
-
-    @staticmethod
-    def _extract_total_balance(wallet_balance: Optional[Dict]) -> float:
-        """
-        Helper to extract the total account equity in USD. This is the most
-        reliable measure of total wallet balance for risk calculations.
-        """
-        if not wallet_balance or 'list' not in wallet_balance:
-            return 0.0
-        try:
-            # The 'totalEquity' field from the UNIFIED account type is the best measure.
-            return float(wallet_balance['list'][0].get('totalEquity', 0.0))
-        except (ValueError, TypeError, IndexError) as e:
-            print(f"⚠️  Could not extract total balance from wallet data: {e}")
-            return 0.0

@@ -48,7 +48,6 @@ def main():
         # 4. Update Google Sheets
         print("\n📤 Syncing data to Google Sheets...")
 
-        # The historical logger ALWAYS overwrites the sheets for a clean sync.
         if futures_log_data:
             headers = list(futures_log_data[0].keys())
             sheets.overwrite_data(
