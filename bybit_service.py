@@ -22,7 +22,7 @@ class BybitService:
 
     def log_response(self, response: Dict, filename: str) -> None:
         """Log API response to JSON file in log directory"""
-        log_dir = "log"
+        log_dir = "logs"
         os.makedirs(log_dir, exist_ok=True)
 
         filepath = f'{log_dir}/{filename}.json'
@@ -64,40 +64,91 @@ class BybitService:
         days_back = days_back or Config.FUTURES_DAYS_BACK
         print(f"⚡ Fetching futures data (last {days_back} days)...")
 
-        start_time = int(
-            (datetime.now() - timedelta(days=days_back)).timestamp() * 1000)
+        # Calculate date ranges in 7-day chunks
+        end_time = datetime.now()
+        start_time = end_time - timedelta(days=days_back)
 
-        # Get execution history for timing data
-        executions = []
-        try:
-            response = self.session.get_executions(
-                category="linear",
-                startTime=str(start_time),
-                limit=100
-            )
-            self.log_response(response, "executions")
-            if response.get('retCode') == 0:
-                executions = response.get('result', {}).get('list', [])
-                print(f"✅ Found {len(executions)} futures executions")
-        except Exception as e:
-            print(f"⚠️  Error fetching executions: {e}")
+        all_executions = []
+        all_positions = []
 
-        # Get closed positions for PnL data
-        positions = []
-        try:
-            response = self.session.get_closed_pnl(
-                category="linear",
-                startTime=str(start_time),
-                limit=100
-            )
-            self.log_response(response, "positions")
-            if response.get('retCode') == 0:
-                positions = response.get('result', {}).get('list', [])
-                print(f"✅ Found {len(positions)} closed positions")
-        except Exception as e:
-            print(f"⚠️  Error fetching positions: {e}")
+        # Process in 7-day chunks
+        current_start = start_time
+        chunk_count = 0
 
-        return executions, positions
+        while current_start < end_time:
+            chunk_count += 1
+            current_end = min(current_start + timedelta(days=7), end_time)
+
+            start_timestamp = int(current_start.timestamp() * 1000)
+            end_timestamp = int(current_end.timestamp() * 1000)
+
+            print(
+                f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
+
+            # Get execution history for this chunk
+            try:
+                response = self.session.get_executions(
+                    category="linear",
+                    startTime=str(start_timestamp),
+                    endTime=str(end_timestamp),
+                    limit=100
+                )
+
+                if response.get('retCode') == 0:
+                    chunk_executions = response.get(
+                        'result', {}).get('list', [])
+                    all_executions.extend(chunk_executions)
+                    if chunk_executions:
+                        print(
+                            f"    ✅ Found {len(chunk_executions)} executions in this chunk")
+                else:
+                    print(
+                        f"    ⚠️  API Error for executions: {response.get('retMsg')}")
+            except Exception as e:
+                print(
+                    f"    ⚠️  Error fetching executions for chunk {chunk_count}: {e}")
+
+            # Get closed positions for this chunk
+            try:
+                response = self.session.get_closed_pnl(
+                    category="linear",
+                    startTime=str(start_timestamp),
+                    endTime=str(end_timestamp),
+                    limit=200
+                )
+
+                if response.get('retCode') == 0:
+                    chunk_positions = response.get(
+                        'result', {}).get('list', [])
+                    all_positions.extend(chunk_positions)
+                    if chunk_positions:
+                        print(
+                            f"    ✅ Found {len(chunk_positions)} positions in this chunk")
+                else:
+                    print(
+                        f"    ⚠️  API Error for positions: {response.get('retMsg')}")
+            except Exception as e:
+                print(
+                    f"    ⚠️  Error fetching positions for chunk {chunk_count}: {e}")
+
+            # Move to next chunk
+            current_start = current_end
+
+            # Small delay to avoid rate limiting
+            time.sleep(0.1)
+
+        # Log final combined response
+        combined_response = {
+            'executions': {'result': {'list': all_executions}},
+            'positions': {'result': {'list': all_positions}},
+            'chunks_processed': chunk_count
+        }
+        self.log_response(combined_response,
+                          "executions_and_positions_combined")
+
+        print(
+            f"✅ Total found: {len(all_executions)} futures executions, {len(all_positions)} closed positions")
+        return all_executions, all_positions
 
     def get_futures_positions(self, days_back: Optional[int] = None) -> List[Dict]:
         """Get enhanced futures positions with proper timing"""
@@ -112,27 +163,54 @@ class BybitService:
         days_back = days_back or Config.SPOT_DAYS_BACK
         print(f"📈 Fetching spot trades (last {days_back} days)...")
 
-        start_time = int(
-            (datetime.now() - timedelta(days=days_back)).timestamp() * 1000)
+        # Calculate date ranges in 7-day chunks
+        end_time = datetime.now()
+        start_time = end_time - timedelta(days=days_back)
 
-        try:
-            response = self.session.get_executions(
-                category="spot",
-                startTime=str(start_time),
-                limit=100
-            )
+        all_trades = []
 
-            if response.get('retCode') == 0:
-                trades = response.get('result', {}).get('list', [])
-                print(f"✅ Found {len(trades)} spot trades")
-                return trades
-            else:
-                print(f"❌ API Error: {response.get('retMsg')}")
-                return []
+        # Process in 7-day chunks
+        current_start = start_time
+        chunk_count = 0
 
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            return []
+        while current_start < end_time:
+            chunk_count += 1
+            current_end = min(current_start + timedelta(days=7), end_time)
+
+            start_timestamp = int(current_start.timestamp() * 1000)
+            end_timestamp = int(current_end.timestamp() * 1000)
+
+            print(
+                f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
+
+            try:
+                response = self.session.get_executions(
+                    category="spot",
+                    startTime=str(start_timestamp),
+                    endTime=str(end_timestamp),
+                    limit=100
+                )
+
+                if response.get('retCode') == 0:
+                    chunk_trades = response.get('result', {}).get('list', [])
+                    all_trades.extend(chunk_trades)
+                    if chunk_trades:
+                        print(
+                            f"    ✅ Found {len(chunk_trades)} trades in this chunk")
+                else:
+                    print(f"    ⚠️  API Error: {response.get('retMsg')}")
+            except Exception as e:
+                print(
+                    f"    ⚠️  Error fetching spot trades for chunk {chunk_count}: {e}")
+
+            # Move to next chunk
+            current_start = current_end
+
+            # Small delay to avoid rate limiting
+            time.sleep(0.1)
+
+        print(f"✅ Total found: {len(all_trades)} spot trades")
+        return all_trades
 
     def get_deposit_withdraw_history(self, days_back: Optional[int] = None) -> Dict[str, List[Dict]]:
         """Get deposit and withdrawal history"""
