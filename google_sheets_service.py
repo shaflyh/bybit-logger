@@ -134,6 +134,7 @@ class GoogleSheetsService:
     def get_spreadsheet_url(self) -> Optional[str]:
         return self.spreadsheet.url if self.spreadsheet else None
 
+
     def test_connection(self) -> bool:
         print("🔧 Testing Google Sheets connection...")
         if not self.gc:

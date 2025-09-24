@@ -17,9 +17,7 @@ class Config:
     GOOGLE_SPREADSHEET_NAME = os.getenv("GOOGLE_SPREADSHEET_NAME", "Bybit Trading Log")
     
     # Data Collection Settings
-    FUTURES_DAYS_BACK = int(os.getenv("FUTURES_DAYS_BACK", "7"))
-    SPOT_DAYS_BACK = int(os.getenv("SPOT_DAYS_BACK", "7"))
-    WALLET_DAYS_BACK = int(os.getenv("WALLET_DAYS_BACK", "30"))
+    DAYS_BACK = int(os.getenv("DAYS_BACK", "7"))
     
     # User Settings
     USER_EMAIL = os.getenv("USER_EMAIL")
@@ -66,6 +64,6 @@ class Config:
         print(f"   Google Credentials: {cls.GOOGLE_CREDENTIALS_FILE}")
         print(f"   Spreadsheet ID: {cls.GOOGLE_SPREADSHEET_ID or 'Using name instead'}")
         print(f"   Spreadsheet Name: {cls.GOOGLE_SPREADSHEET_NAME}")
-        print(f"   Data Range: Futures({cls.FUTURES_DAYS_BACK}d), Spot({cls.SPOT_DAYS_BACK}d), Wallet({cls.WALLET_DAYS_BACK}d)")
+        print(f"   Data Range: {cls.DAYS_BACK} days back for all data types")
         print(f"   Auto Clear: {cls.AUTO_CLEAR_SHEETS}")
         print(f"   Formatting: {cls.ENABLE_FORMATTING}")

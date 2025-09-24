@@ -61,7 +61,7 @@ class BybitService:
 
     def get_futures_executions_with_positions(self, days_back: Optional[int] = None) -> Tuple[List[Dict], List[Dict]]:
         """Get futures executions and closed positions with proper timing"""
-        days_back = days_back or Config.FUTURES_DAYS_BACK
+        days_back = days_back or Config.DAYS_BACK
         print(f"⚡ Fetching futures data (last {days_back} days)...")
 
         # Calculate date ranges in 7-day chunks
@@ -135,7 +135,7 @@ class BybitService:
             current_start = current_end
 
             # Small delay to avoid rate limiting
-            time.sleep(0.1)
+            time.sleep(0.2)
 
         # Log final combined response
         combined_response = {
@@ -160,7 +160,7 @@ class BybitService:
 
     def get_spot_trades(self, days_back: Optional[int] = None) -> List[Dict]:
         """Get spot trading history"""
-        days_back = days_back or Config.SPOT_DAYS_BACK
+        days_back = days_back or Config.DAYS_BACK
         print(f"📈 Fetching spot trades (last {days_back} days)...")
 
         # Calculate date ranges in 7-day chunks
@@ -207,51 +207,91 @@ class BybitService:
             current_start = current_end
 
             # Small delay to avoid rate limiting
-            time.sleep(0.1)
+            time.sleep(0.2)
 
         print(f"✅ Total found: {len(all_trades)} spot trades")
         return all_trades
 
     def get_deposit_withdraw_history(self, days_back: Optional[int] = None) -> Dict[str, List[Dict]]:
         """Get deposit and withdrawal history"""
-        days_back = days_back or Config.WALLET_DAYS_BACK
+        days_back = days_back or Config.DAYS_BACK
         print(
             f"💸 Fetching deposit/withdrawal history (last {days_back} days)...")
 
-        start_time = int(
-            (datetime.now() - timedelta(days=days_back)).timestamp() * 1000)
+        # Calculate date ranges in 7-day chunks
+        end_time = datetime.now()
+        start_time = end_time - timedelta(days=days_back)
 
-        deposits = []
-        withdrawals = []
+        all_deposits = []
+        all_withdrawals = []
 
-        # Get deposits
-        try:
-            response = self.session.get_deposit_records(
-                startTime=str(start_time),
-                limit=50
-            )
-            if response.get('retCode') == 0:
-                deposits = response.get('result', {}).get('rows', [])
-        except Exception as e:
-            print(f"⚠️  Error fetching deposits: {e}")
+        # Process in 7-day chunks
+        current_start = start_time
+        chunk_count = 0
 
-        # Get withdrawals
-        try:
-            response = self.session.get_withdrawal_records(
-                startTime=str(start_time),
-                limit=50
-            )
-            if response.get('retCode') == 0:
-                withdrawals = response.get('result', {}).get('rows', [])
-        except Exception as e:
-            print(f"⚠️  Error fetching withdrawals: {e}")
+        while current_start < end_time:
+            chunk_count += 1
+            current_end = min(current_start + timedelta(days=7), end_time)
+
+            start_timestamp = int(current_start.timestamp() * 1000)
+            end_timestamp = int(current_end.timestamp() * 1000)
+
+            print(
+                f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
+
+            # Get deposits for this chunk
+            try:
+                response = self.session.get_deposit_records(
+                    startTime=str(start_timestamp),
+                    endTime=str(end_timestamp),
+                    limit=50
+                )
+                if response.get('retCode') == 0:
+                    chunk_deposits = response.get('result', {}).get('rows', [])
+                    all_deposits.extend(chunk_deposits)
+                    if chunk_deposits:
+                        print(
+                            f"    ✅ Found {len(chunk_deposits)} deposits in this chunk")
+                else:
+                    print(
+                        f"    ⚠️  API Error for deposits: {response.get('retMsg')}")
+            except Exception as e:
+                print(
+                    f"    ⚠️  Error fetching deposits for chunk {chunk_count}: {e}")
+
+            # Get withdrawals for this chunk
+            try:
+                response = self.session.get_withdrawal_records(
+                    startTime=str(start_timestamp),
+                    endTime=str(end_timestamp),
+                    limit=50
+                )
+                if response.get('retCode') == 0:
+                    chunk_withdrawals = response.get(
+                        'result', {}).get('rows', [])
+                    all_withdrawals.extend(chunk_withdrawals)
+                    if chunk_withdrawals:
+                        print(
+                            f"    ✅ Found {len(chunk_withdrawals)} withdrawals in this chunk")
+                else:
+                    print(
+                        f"    ⚠️  API Error for withdrawals: {response.get('retMsg')}")
+            except Exception as e:
+                print(
+                    f"    ⚠️  Error fetching withdrawals for chunk {chunk_count}: {e}")
+
+            # Move to next chunk
+            current_start = current_end
+
+            # Small delay to avoid rate limiting
+            time.sleep(0.2)
 
         print(
-            f"✅ Found {len(deposits)} deposits, {len(withdrawals)} withdrawals")
+            f"✅ Total found: {len(all_deposits)} deposits, {len(all_withdrawals)} withdrawals")
 
         return {
-            "deposits": deposits,
-            "withdrawals": withdrawals
+            "deposits": all_deposits,
+            "withdrawals": all_withdrawals
         }
 
     def match_executions_to_positions(self, executions: List[Dict], positions: List[Dict]) -> List[Dict]:
