@@ -196,19 +196,25 @@ class GoogleSheetsService:
             red_bg = {'backgroundColor': {
                 'red': 1.0, 'green': 0.7, 'blue': 0.7}}
 
-            # Format Buy ranges (green)
+            # Text colors for Side column
+            green_text = {'textFormat': {'foregroundColor': {
+                'red': 0.0, 'green': 0.6, 'blue': 0.0}}}  # Dark green text
+            red_text = {'textFormat': {'foregroundColor': {
+                'red': 0.8, 'green': 0.0, 'blue': 0.0}}}   # Dark red text
+
+            # Format Buy ranges (green text) - with longer delays to avoid rate limits
             for range_str in buy_ranges:
                 try:
-                    worksheet.format(range_str, green_bg)
-                    time.sleep(0.2)  # Small delay between range operations
+                    worksheet.format(range_str, green_text)
+                    time.sleep(1.0)  # Increased delay between range operations
                 except Exception as e:
                     print(f"⚠️  Could not format Buy range {range_str}: {e}")
 
-            # Format Sell ranges (red)
+            # Format Sell ranges (red text)
             for range_str in sell_ranges:
                 try:
-                    worksheet.format(range_str, red_bg)
-                    time.sleep(0.2)
+                    worksheet.format(range_str, red_text)
+                    time.sleep(1.0)  # Increased delay
                 except Exception as e:
                     print(f"⚠️  Could not format Sell range {range_str}: {e}")
 
@@ -216,7 +222,7 @@ class GoogleSheetsService:
             for range_str in profit_ranges:
                 try:
                     worksheet.format(range_str, green_bg)
-                    time.sleep(0.2)
+                    time.sleep(1.0)  # Increased delay
                 except Exception as e:
                     print(
                         f"⚠️  Could not format Profit range {range_str}: {e}")
@@ -225,7 +231,7 @@ class GoogleSheetsService:
             for range_str in loss_ranges:
                 try:
                     worksheet.format(range_str, red_bg)
-                    time.sleep(0.2)
+                    time.sleep(1.0)  # Increased delay
                 except Exception as e:
                     print(f"⚠️  Could not format Loss range {range_str}: {e}")
 
@@ -310,9 +316,17 @@ class GoogleSheetsService:
             self.format_headers(worksheet)
 
             # Apply conditional formatting for futures data with additional delay
-            if sheet_name == "Futures History":
-                time.sleep(2)  # Extra delay before formatting
-                self.apply_conditional_formatting(worksheet, headers)
+            if sheet_name == "Futures History" and Config.ENABLE_FORMATTING:
+                print(
+                    "⏳ Applying conditional formatting (this may take a while due to rate limits)...")
+                time.sleep(3)  # Extra delay before formatting
+                try:
+                    self.apply_conditional_formatting(worksheet, headers)
+                except Exception as e:
+                    print(
+                        f"⚠️  Conditional formatting failed due to rate limits: {e}")
+                    print(
+                        "💡 Tip: You can disable formatting in config to speed up syncing")
 
             return True
         except Exception as e:

@@ -48,9 +48,6 @@ class DataProcessor:
                 open_time_simplified = open_time.strftime('%b-%d %H:%M')
                 close_time_simplified = close_time.strftime('%b-%d %H:%M')
 
-                # Debug output to check if our formatting is working
-                print(f"DEBUG: {position.get('symbol', 'Unknown')} - Open: {open_time_simplified}, Close: {close_time_simplified}")
-
                 futures_log.append({
                     "Symbol": position.get('symbol', ''),
                     "Side": "Buy" if position.get('side') == "Sell" else "Sell",
@@ -60,13 +57,22 @@ class DataProcessor:
                     "Hours Held": hours_held_simplified,
                     "Open Time": open_time_simplified,
                     "Close Time": close_time_simplified,
+                    "_close_time_sort": close_time,  # Keep datetime for sorting
                 })
             except Exception as e:
                 print(
                     f"⚠️  Error processing futures position {position.get('symbol', 'Unknown')}: {e}")
                 continue
 
-        return sorted(futures_log, key=lambda x: x['Close Time'], reverse=True)
+        # Sort by actual datetime object, then remove the sorting field
+        sorted_log = sorted(
+            futures_log, key=lambda x: x['_close_time_sort'], reverse=True)
+
+        # Remove the temporary sorting field before returning
+        for entry in sorted_log:
+            entry.pop('_close_time_sort', None)
+
+        return sorted_log
 
     @staticmethod
     def process_spot_data(trades: List[Dict]) -> List[Dict]:
