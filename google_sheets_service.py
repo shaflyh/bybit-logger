@@ -1,5 +1,5 @@
 import os
-import json
+import time
 import gspread
 from gspread.utils import ValueInputOption
 from google.oauth2.service_account import Credentials
@@ -56,6 +56,184 @@ class GoogleSheetsService:
                              'red': 0.9, 'green': 0.9, 'blue': 0.9}})
         except Exception as e:
             print(f"⚠️  Could not apply header formatting: {e}")
+
+    def apply_conditional_formatting(self, worksheet: gspread.Worksheet, headers: List[str]):
+        """Apply conditional formatting for Side and PnL columns using efficient batch operations"""
+        if not Config.ENABLE_FORMATTING:
+            return
+
+        try:
+            # Get column indices for Side and PnL
+            side_col_idx = None
+            pnl_col_idx = None
+
+            for i, header in enumerate(headers):
+                if header == "Side":
+                    side_col_idx = i + 1  # gspread uses 1-based indexing
+                elif header == "PnL":
+                    pnl_col_idx = i + 1
+
+            # Get all data at once to minimize API calls
+            all_data = worksheet.get_all_values()
+            if len(all_data) < 2:  # No data rows to format
+                return
+
+            # Group cells by color to create ranges
+            buy_ranges = []
+            sell_ranges = []
+            profit_ranges = []
+            loss_ranges = []
+
+            # Process Side column
+            if side_col_idx:
+                side_col_letter = chr(64 + side_col_idx)
+                current_buy_start = None
+                current_sell_start = None
+
+                # Skip header
+                for row_idx, row_data in enumerate(all_data[1:], start=2):
+                    side_value = row_data[side_col_idx -
+                                          1] if len(row_data) > side_col_idx - 1 else ""
+
+                    if side_value == "Buy":
+                        if current_buy_start is None:
+                            current_buy_start = row_idx
+                        # Close any ongoing sell range
+                        if current_sell_start is not None:
+                            sell_ranges.append(
+                                f"{side_col_letter}{current_sell_start}:{side_col_letter}{row_idx - 1}")
+                            current_sell_start = None
+                    elif side_value == "Sell":
+                        if current_sell_start is None:
+                            current_sell_start = row_idx
+                        # Close any ongoing buy range
+                        if current_buy_start is not None:
+                            buy_ranges.append(
+                                f"{side_col_letter}{current_buy_start}:{side_col_letter}{row_idx - 1}")
+                            current_buy_start = None
+                    else:
+                        # Close both ranges if we hit a different value
+                        if current_buy_start is not None:
+                            buy_ranges.append(
+                                f"{side_col_letter}{current_buy_start}:{side_col_letter}{row_idx - 1}")
+                            current_buy_start = None
+                        if current_sell_start is not None:
+                            sell_ranges.append(
+                                f"{side_col_letter}{current_sell_start}:{side_col_letter}{row_idx - 1}")
+                            current_sell_start = None
+
+                # Close any remaining ranges
+                last_row = len(all_data)
+                if current_buy_start is not None:
+                    buy_ranges.append(
+                        f"{side_col_letter}{current_buy_start}:{side_col_letter}{last_row}")
+                if current_sell_start is not None:
+                    sell_ranges.append(
+                        f"{side_col_letter}{current_sell_start}:{side_col_letter}{last_row}")
+
+            # Process PnL column
+            if pnl_col_idx:
+                pnl_col_letter = chr(64 + pnl_col_idx)
+                current_profit_start = None
+                current_loss_start = None
+
+                # Skip header
+                for row_idx, row_data in enumerate(all_data[1:], start=2):
+                    pnl_value = row_data[pnl_col_idx -
+                                         1] if len(row_data) > pnl_col_idx - 1 else ""
+
+                    try:
+                        pnl_float = float(pnl_value)
+                        if pnl_float > 0:
+                            if current_profit_start is None:
+                                current_profit_start = row_idx
+                            # Close any ongoing loss range
+                            if current_loss_start is not None:
+                                loss_ranges.append(
+                                    f"{pnl_col_letter}{current_loss_start}:{pnl_col_letter}{row_idx - 1}")
+                                current_loss_start = None
+                        elif pnl_float < 0:
+                            if current_loss_start is None:
+                                current_loss_start = row_idx
+                            # Close any ongoing profit range
+                            if current_profit_start is not None:
+                                profit_ranges.append(
+                                    f"{pnl_col_letter}{current_profit_start}:{pnl_col_letter}{row_idx - 1}")
+                                current_profit_start = None
+                        else:
+                            # Zero value, close both ranges
+                            if current_profit_start is not None:
+                                profit_ranges.append(
+                                    f"{pnl_col_letter}{current_profit_start}:{pnl_col_letter}{row_idx - 1}")
+                                current_profit_start = None
+                            if current_loss_start is not None:
+                                loss_ranges.append(
+                                    f"{pnl_col_letter}{current_loss_start}:{pnl_col_letter}{row_idx - 1}")
+                                current_loss_start = None
+                    except (ValueError, TypeError):
+                        # Close both ranges on invalid value
+                        if current_profit_start is not None:
+                            profit_ranges.append(
+                                f"{pnl_col_letter}{current_profit_start}:{pnl_col_letter}{row_idx - 1}")
+                            current_profit_start = None
+                        if current_loss_start is not None:
+                            loss_ranges.append(
+                                f"{pnl_col_letter}{current_loss_start}:{pnl_col_letter}{row_idx - 1}")
+                            current_loss_start = None
+
+                # Close any remaining ranges
+                last_row = len(all_data)
+                if current_profit_start is not None:
+                    profit_ranges.append(
+                        f"{pnl_col_letter}{current_profit_start}:{pnl_col_letter}{last_row}")
+                if current_loss_start is not None:
+                    loss_ranges.append(
+                        f"{pnl_col_letter}{current_loss_start}:{pnl_col_letter}{last_row}")
+
+            # Apply formatting to ranges (much fewer API calls)
+            green_bg = {'backgroundColor': {
+                'red': 0.7, 'green': 1.0, 'blue': 0.7}}
+            red_bg = {'backgroundColor': {
+                'red': 1.0, 'green': 0.7, 'blue': 0.7}}
+
+            # Format Buy ranges (green)
+            for range_str in buy_ranges:
+                try:
+                    worksheet.format(range_str, green_bg)
+                    time.sleep(0.2)  # Small delay between range operations
+                except Exception as e:
+                    print(f"⚠️  Could not format Buy range {range_str}: {e}")
+
+            # Format Sell ranges (red)
+            for range_str in sell_ranges:
+                try:
+                    worksheet.format(range_str, red_bg)
+                    time.sleep(0.2)
+                except Exception as e:
+                    print(f"⚠️  Could not format Sell range {range_str}: {e}")
+
+            # Format Profit ranges (green)
+            for range_str in profit_ranges:
+                try:
+                    worksheet.format(range_str, green_bg)
+                    time.sleep(0.2)
+                except Exception as e:
+                    print(
+                        f"⚠️  Could not format Profit range {range_str}: {e}")
+
+            # Format Loss ranges (red)
+            for range_str in loss_ranges:
+                try:
+                    worksheet.format(range_str, red_bg)
+                    time.sleep(0.2)
+                except Exception as e:
+                    print(f"⚠️  Could not format Loss range {range_str}: {e}")
+
+            print(
+                f"✅ Applied formatting to {len(buy_ranges + sell_ranges + profit_ranges + loss_ranges)} ranges instead of individual cells")
+
+        except Exception as e:
+            print(f"⚠️  Could not apply conditional formatting: {e}")
 
     def get_or_create_worksheet(self, sheet_name: str, headers: Optional[List[str]] = None) -> Optional[gspread.Worksheet]:
         """
@@ -125,7 +303,17 @@ class GoogleSheetsService:
 
             worksheet.update(
                 rows_to_write, value_input_option=ValueInputOption.user_entered)
+
+            # Add delay to avoid rate limits
+            time.sleep(1)
+
             self.format_headers(worksheet)
+
+            # Apply conditional formatting for futures data with additional delay
+            if sheet_name == "Futures History":
+                time.sleep(2)  # Extra delay before formatting
+                self.apply_conditional_formatting(worksheet, headers)
+
             return True
         except Exception as e:
             print(f"❌ Error overwriting data in '{sheet_name}': {e}")
@@ -133,7 +321,6 @@ class GoogleSheetsService:
 
     def get_spreadsheet_url(self) -> Optional[str]:
         return self.spreadsheet.url if self.spreadsheet else None
-
 
     def test_connection(self) -> bool:
         print("🔧 Testing Google Sheets connection...")

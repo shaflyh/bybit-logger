@@ -34,16 +34,21 @@ class DataProcessor:
                 pnl = float(position.get('closedPnl', 0))
 
                 # Total fee cost from the API summary (Note: often 0 on testnet)
-                total_fee_cost = float(position.get('orderFee', 0))
+                total_fee_cost = float(position.get(
+                    'openFee', 0)) + float(position.get('closeFee', 0))
+
+                # Get leverage from API
+                leverage = position.get('leverage', '1')
 
                 futures_log.append({
-                    "Open Time": open_time.strftime('%Y-%m-%d %H:%M:%S'),
-                    "Close Time": close_time.strftime('%Y-%m-%d %H:%M:%S'),
-                    "Hold Duration": str(timedelta(seconds=round(hold_duration.total_seconds()))),
                     "Symbol": position.get('symbol', ''),
                     "Side": "Buy" if position.get('side') == "Sell" else "Sell",
-                    "Profit / Loss": f"{pnl:.4f}",
-                    "Fee Cost": f"{total_fee_cost:.4f}",
+                    "Lev": leverage,
+                    "PnL": f"{pnl:.4f}",
+                    "Fee": f"{total_fee_cost:.4f}",
+                    "Hours Held": str(timedelta(seconds=round(hold_duration.total_seconds()))),
+                    "Open Time": open_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    "Close Time": close_time.strftime('%Y-%m-%d %H:%M:%S'),
                 })
             except Exception as e:
                 print(
