@@ -40,15 +40,26 @@ class DataProcessor:
                 # Get leverage from API
                 leverage = position.get('leverage', '1')
 
+                # Calculate simplified hours held (decimal format, no 'h' suffix)
+                total_hours = hold_duration.total_seconds() / 3600
+                hours_held_simplified = f"{total_hours:.1f}"
+
+                # Simplified time format: "Sep-15 08:44"
+                open_time_simplified = open_time.strftime('%b-%d %H:%M')
+                close_time_simplified = close_time.strftime('%b-%d %H:%M')
+
+                # Debug output to check if our formatting is working
+                print(f"DEBUG: {position.get('symbol', 'Unknown')} - Open: {open_time_simplified}, Close: {close_time_simplified}")
+
                 futures_log.append({
                     "Symbol": position.get('symbol', ''),
                     "Side": "Buy" if position.get('side') == "Sell" else "Sell",
                     "Lev": leverage,
                     "PnL": f"{pnl:.4f}",
                     "Fee": f"{total_fee_cost:.4f}",
-                    "Hours Held": str(timedelta(seconds=round(hold_duration.total_seconds()))),
-                    "Open Time": open_time.strftime('%Y-%m-%d %H:%M:%S'),
-                    "Close Time": close_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    "Hours Held": hours_held_simplified,
+                    "Open Time": open_time_simplified,
+                    "Close Time": close_time_simplified,
                 })
             except Exception as e:
                 print(
