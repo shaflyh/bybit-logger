@@ -206,7 +206,7 @@ class GoogleSheetsService:
             for range_str in buy_ranges:
                 try:
                     worksheet.format(range_str, green_text)
-                    time.sleep(1.0)  # Increased delay between range operations
+                    time.sleep(0.5)  # Increased delay between range operations
                 except Exception as e:
                     print(f"⚠️  Could not format Buy range {range_str}: {e}")
 
@@ -214,7 +214,7 @@ class GoogleSheetsService:
             for range_str in sell_ranges:
                 try:
                     worksheet.format(range_str, red_text)
-                    time.sleep(1.0)  # Increased delay
+                    time.sleep(0.5)  # Increased delay
                 except Exception as e:
                     print(f"⚠️  Could not format Sell range {range_str}: {e}")
 
@@ -222,7 +222,7 @@ class GoogleSheetsService:
             for range_str in profit_ranges:
                 try:
                     worksheet.format(range_str, green_bg)
-                    time.sleep(1.0)  # Increased delay
+                    time.sleep(0.5)  # Increased delay
                 except Exception as e:
                     print(
                         f"⚠️  Could not format Profit range {range_str}: {e}")
@@ -231,7 +231,7 @@ class GoogleSheetsService:
             for range_str in loss_ranges:
                 try:
                     worksheet.format(range_str, red_bg)
-                    time.sleep(1.0)  # Increased delay
+                    time.sleep(0.5)  # Increased delay
                 except Exception as e:
                     print(f"⚠️  Could not format Loss range {range_str}: {e}")
 
@@ -328,6 +328,58 @@ class GoogleSheetsService:
                     print(
                         "💡 Tip: You can disable formatting in config to speed up syncing")
 
+            return True
+        except Exception as e:
+            print(f"❌ Error overwriting data in '{sheet_name}': {e}")
+            return False
+
+    def overwrite_portfolio_overview(self, overview_data: Dict) -> bool:
+        """
+        Creates or overwrites a sheet with portfolio overview metrics.
+        """
+        if not overview_data:
+            return False
+
+        sheet_name = "Portfolio Overview"
+        try:
+            worksheet = self.get_or_create_worksheet(
+                sheet_name, headers=["Metric", "Value", "Notes"])
+            if not worksheet:
+                return False
+
+            worksheet.clear()
+
+            # Prepare rows to write with the new structure
+            headers = ["Metric", "Value", "Notes"]
+            rows_to_write = [
+                headers,
+                ["Total Capital", overview_data.get(
+                    "Total Capital"), "Sum of deposits minus withdrawals"],
+                ["Current Balance", overview_data.get(
+                    "Current Balance"), "From wallet balance (equity)"],
+                ["Net PnL", overview_data.get("Net PnL"), overview_data.get(
+                    "Notes", {}).get("Net PnL")],
+                ["Win Rate", overview_data.get("Win Rate"), overview_data.get(
+                    "Notes", {}).get("Win Rate")],
+                ["Date Range", overview_data.get("Date Range"), ""]
+            ]
+
+            worksheet.update(
+                rows_to_write, value_input_option=ValueInputOption.user_entered)
+
+            self.format_headers(worksheet)
+
+            # Apply specific formatting to cells for better presentation
+            # Format currency values
+            worksheet.format('B2:B4', {'numberFormat': {
+                             'type': 'NUMBER', 'pattern': '#,##0.00 "USDT"'}})
+            # Format win rate as a percentage
+            worksheet.format(
+                'B5', {'numberFormat': {'type': 'PERCENT', 'pattern': '0.00%'}})
+            # Bold the metric labels
+            worksheet.format('A2:A6', {'textFormat': {'bold': True}})
+
+            print(f"✅ Successfully updated '{sheet_name}' sheet.")
             return True
         except Exception as e:
             print(f"❌ Error overwriting data in '{sheet_name}': {e}")

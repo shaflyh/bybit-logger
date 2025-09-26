@@ -1,9 +1,4 @@
-"""
-Bybit Trading Logger - Historical Data Sync
-
-Fetches historical trading data via REST API and syncs it to Google Sheets,
-overwriting the previous data to ensure a clean, up-to-date record.
-"""
+# main.py
 
 from config import Config
 from bybit_service import BybitService
@@ -45,8 +40,17 @@ def main():
         wallet_flows_data = DataProcessor.process_wallet_flows(
             deposit_withdraw)
 
+        # Process Portfolio Overview Data
+        portfolio_overview_data = DataProcessor.process_portfolio_overview(
+            futures_log_data, wallet_balance, wallet_flows_data, Config.DAYS_BACK
+        )
+
         # 4. Update Google Sheets
         print("\n📤 Syncing data to Google Sheets...")
+
+        # Overwrite the Portfolio Overview sheet
+        if portfolio_overview_data:
+            sheets.overwrite_portfolio_overview(portfolio_overview_data)
 
         if futures_log_data:
             headers = list(futures_log_data[0].keys())
@@ -70,6 +74,8 @@ def main():
             print(f"📄 View your spreadsheet at: {spreadsheet_url}")
 
         print("\n📈 Summary of data synced:")
+        if portfolio_overview_data:
+            print("   - Portfolio Overview: Updated with latest stats.")
         print(
             f"   - Futures History: {len(futures_log_data)} closed positions")
         print(f"   - Spot History: {len(spot_log_data)} trades")

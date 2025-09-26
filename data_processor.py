@@ -5,8 +5,67 @@ from typing import Dict, List, Optional
 class DataProcessor:
     """
     Service for processing HISTORICAL trading data from the Bybit API
-    into final, supervisor-approved spreadsheet formats.
     """
+
+    @staticmethod
+    def process_portfolio_overview(
+        futures_history: List[Dict],
+        wallet_balance: Optional[Dict],
+        wallet_flows: List[Dict],
+        days_back: int  # Add days_back as a parameter
+    ) -> Optional[Dict]:
+        """
+        Calculates high-level portfolio overview metrics.
+        """
+        if not wallet_balance:
+            return None
+
+        # 1. Calculate Total Capital
+        total_deposits = sum(
+            float(flow['Amount']) for flow in wallet_flows if 'Deposit' in flow['Type'])
+        total_withdrawals = sum(
+            float(flow['Amount']) for flow in wallet_flows if 'Withdrawal' in flow['Type'])
+        total_capital = total_deposits - total_withdrawals
+
+        # 2. Get Current Balance
+        current_balance = float(
+            wallet_balance['list'][0].get('totalEquity', 0))
+
+        # 3. Calculate Net PnL and Win Rate
+        net_pnl = 0
+        winning_trades = 0
+        total_trades = len(futures_history)
+
+        if total_trades > 0:
+            for trade in futures_history:
+                pnl = float(trade.get('PnL', 0))
+                if pnl > 0:
+                    winning_trades += 1
+                net_pnl += pnl
+
+            win_rate = (winning_trades /
+                        total_trades) if total_trades > 0 else 0
+        else:
+            win_rate = 0
+
+        # Calculate the date range directly from the DAYS_BACK setting
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days_back)
+        date_range_str = f"{start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')}"
+
+        overview_data = {
+            "Total Capital": f"{total_capital:.2f}",
+            "Current Balance": f"{current_balance:.2f}",
+            "Net PnL": f"{net_pnl:+.2f}",
+            "Win Rate": win_rate,
+            "Date Range": date_range_str,  # Use the newly calculated range
+            "Notes": {
+                "Net PnL": f"Across {total_trades} trades",
+                "Win Rate": f"{winning_trades} wins / {total_trades} trades"
+            }
+        }
+
+        return overview_data
 
     @staticmethod
     def process_futures_data(positions: List[Dict], wallet_balance: Optional[Dict] = None) -> List[Dict]:
@@ -30,17 +89,10 @@ class DataProcessor:
                 close_time = datetime.fromtimestamp(close_time_ms / 1000)
                 hold_duration = close_time - open_time
 
-                # Final PnL from the API summary
                 pnl = float(position.get('closedPnl', 0))
-
-                # Total fee cost from the API summary (Note: often 0 on testnet)
                 total_fee_cost = float(position.get(
                     'openFee', 0)) + float(position.get('closeFee', 0))
-
-                # Get leverage from API
                 leverage = position.get('leverage', '1')
-
-                # Calculate simplified hours held (decimal format, no 'h' suffix)
                 total_hours = hold_duration.total_seconds() / 3600
                 hours_held_simplified = f"{total_hours:.1f}"
 
@@ -57,18 +109,16 @@ class DataProcessor:
                     "Hours Held": hours_held_simplified,
                     "Open Time": open_time_simplified,
                     "Close Time": close_time_simplified,
-                    "_close_time_sort": close_time,  # Keep datetime for sorting
+                    "_close_time_sort": close_time,
                 })
             except Exception as e:
                 print(
                     f"⚠️  Error processing futures position {position.get('symbol', 'Unknown')}: {e}")
                 continue
 
-        # Sort by actual datetime object, then remove the sorting field
         sorted_log = sorted(
             futures_log, key=lambda x: x['_close_time_sort'], reverse=True)
 
-        # Remove the temporary sorting field before returning
         for entry in sorted_log:
             entry.pop('_close_time_sort', None)
 
