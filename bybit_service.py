@@ -214,7 +214,7 @@ class BybitService:
 
     def get_deposit_withdraw_history(self, days_back: Optional[int] = None) -> Dict[str, List[Dict]]:
         """Get deposit and withdrawal history"""
-        days_back = days_back or Config.DAYS_BACK
+        days_back = 365
         print(
             f"💸 Fetching deposit/withdrawal history (last {days_back} days)...")
 
@@ -231,7 +231,7 @@ class BybitService:
 
         while current_start < end_time:
             chunk_count += 1
-            current_end = min(current_start + timedelta(days=7), end_time)
+            current_end = min(current_start + timedelta(days=30), end_time)
 
             start_timestamp = int(current_start.timestamp() * 1000)
             end_timestamp = int(current_end.timestamp() * 1000)
@@ -289,10 +289,14 @@ class BybitService:
         print(
             f"✅ Total found: {len(all_deposits)} deposits, {len(all_withdrawals)} withdrawals")
 
-        return {
+        deposits_withdrawals = {
             "deposits": all_deposits,
             "withdrawals": all_withdrawals
         }
+
+        self.log_response(deposits_withdrawals, "deposits_withdrawals")
+
+        return deposits_withdrawals
 
     def match_executions_to_positions(self, executions: List[Dict], positions: List[Dict]) -> List[Dict]:
         """Match executions to positions to calculate proper hold times"""

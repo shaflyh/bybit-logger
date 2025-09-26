@@ -174,10 +174,20 @@ class DataProcessor:
 
         flow_data = []
         for flow in all_flows:
-            is_deposit = 'depositId' in flow
+            # 'successAt' is present for deposits, but not for withdrawals.
+            is_deposit = 'successAt' in flow
+
             try:
+                # Get deposit time from 'successAt', or withdrawal time from 'updateTime'
                 timestamp_ms = int(flow.get('successAt')
-                                   or flow.get('updatedTime', 0))
+                                   or flow.get('updateTime', 0))
+
+                # Handle cases where the timestamp might still be zero
+                if timestamp_ms == 0:
+                    print(
+                        f"⚠️  Warning: Found a wallet transaction with a zero timestamp. Skipping.")
+                    continue
+
                 timestamp = datetime.fromtimestamp(
                     timestamp_ms/1000).strftime('%Y-%m-%d %H:%M:%S')
 
