@@ -205,3 +205,40 @@ class DataProcessor:
                 continue
 
         return sorted(flow_data, key=lambda x: x['Time'], reverse=True)
+
+    @staticmethod
+    def process_internal_transfer_data(transfers: List[Dict]) -> List[Dict]:
+        """
+        Processes internal transfer records to create the 'Internal Transfers' log.
+        """
+        if not transfers:
+            return []
+
+        print(
+            f"   - Processing {len(transfers)} internal transfers for 'Internal Transfers'...")
+
+        transfer_log = []
+        for transfer in transfers:
+            try:
+                timestamp_ms = int(transfer.get('timestamp', 0))
+                if timestamp_ms == 0:
+                    print(
+                        "⚠️  Warning: Found a transfer with a zero timestamp. Skipping.")
+                    continue
+
+                timestamp = datetime.fromtimestamp(
+                    timestamp_ms/1000).strftime('%Y-%m-%d %H:%M:%S')
+
+                transfer_log.append({
+                    "Time": timestamp,
+                    "Coin": transfer.get('coin', ''),
+                    "Amount": transfer.get('amount', ''),
+                    "From Account": transfer.get('fromAccountType', ''),
+                    "To Account": transfer.get('toAccountType', ''),
+                    "Status": transfer.get('status', ''),
+                })
+            except Exception as e:
+                print(f"⚠️  Error processing internal transfer: {e}")
+                continue
+
+        return sorted(transfer_log, key=lambda x: x['Time'], reverse=True)

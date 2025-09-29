@@ -298,6 +298,66 @@ class BybitService:
 
         return deposits_withdrawals
 
+    def get_internal_transfer_records(self, days_back: Optional[int] = None) -> List[Dict]:
+        """Get internal transfer records between different account types"""
+        days_back = days_back or Config.DAYS_BACK
+        print(
+            f"💸 Fetching internal transfer records (last {days_back} days)...")
+
+        # Calculate date ranges in 7-day chunks
+        end_time = datetime.now()
+        start_time = end_time - timedelta(days=days_back)
+
+        all_transfers = []
+
+        # Process in 7-day chunks
+        current_start = start_time
+        chunk_count = 0
+
+        while current_start < end_time:
+            chunk_count += 1
+            current_end = min(current_start + timedelta(days=7), end_time)
+
+            start_timestamp = int(current_start.timestamp() * 1000)
+            end_timestamp = int(current_end.timestamp() * 1000)
+
+            print(
+                f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
+
+            try:
+                response = self.session.get_internal_transfer_records(
+                    startTime=str(start_timestamp),
+                    endTime=str(end_timestamp),
+                    limit=50
+                )
+
+                if response.get('retCode') == 0:
+                    chunk_transfers = response.get(
+                        'result', {}).get('list', [])
+                    all_transfers.extend(chunk_transfers)
+                    if chunk_transfers:
+                        print(
+                            f"    ✅ Found {len(chunk_transfers)} transfers in this chunk")
+                else:
+                    print(f"    ⚠️  API Error: {response.get('retMsg')}")
+            except Exception as e:
+                print(
+                    f"    ⚠️  Error fetching internal transfers for chunk {chunk_count}: {e}")
+
+            # Move to next chunk
+            current_start = current_end
+
+            # Small delay to avoid rate limiting
+            time.sleep(0.2)
+
+        print(f"✅ Total found: {len(all_transfers)} internal transfers")
+
+        # Log the response
+        self.log_response({'result': {'list': all_transfers}},
+                          "internal_transfers")
+
+        return all_transfers
+
     def match_executions_to_positions(self, executions: List[Dict], positions: List[Dict]) -> List[Dict]:
         """Match executions to positions to calculate proper hold times"""
         print("🔄 Matching executions to positions for accurate timing...")

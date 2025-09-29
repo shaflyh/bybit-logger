@@ -31,6 +31,7 @@ def main():
         spot_trades = bybit.get_spot_trades()
         futures_positions = bybit.get_futures_positions()
         deposit_withdraw = bybit.get_deposit_withdraw_history()
+        internal_transfers = bybit.get_internal_transfer_records()
 
         # 3. Process Data
         print("\n🔄 Processing data for final logs...")
@@ -39,6 +40,8 @@ def main():
         spot_log_data = DataProcessor.process_spot_data(spot_trades)
         wallet_flows_data = DataProcessor.process_wallet_flows(
             deposit_withdraw)
+        internal_transfer_data = DataProcessor.process_internal_transfer_data(
+            internal_transfers)
 
         # Process Portfolio Overview Data
         portfolio_overview_data = DataProcessor.process_portfolio_overview(
@@ -67,6 +70,11 @@ def main():
             sheets.overwrite_data(
                 "Wallet Flows", wallet_flows_data, headers=headers)
 
+        if internal_transfer_data:
+            headers = list(internal_transfer_data[0].keys())
+            sheets.overwrite_data(
+                "Internal Transfers", internal_transfer_data, headers=headers)
+
         # 5. Final Summary
         print("\n🎉 Sync completed successfully!")
         spreadsheet_url = sheets.get_spreadsheet_url()
@@ -80,6 +88,8 @@ def main():
             f"   - Futures History: {len(futures_log_data)} closed positions")
         print(f"   - Spot History: {len(spot_log_data)} trades")
         print(f"   - Wallet Flows: {len(wallet_flows_data)} transactions")
+        print(
+            f"   - Internal Transfers: {len(internal_transfer_data)} transfers")
 
     except ValueError as e:
         print(f"❌ Configuration Error: {e}")
