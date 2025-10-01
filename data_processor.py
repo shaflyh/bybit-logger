@@ -22,9 +22,9 @@ class DataProcessor:
 
         # 1. Calculate Total Capital
         total_deposits = sum(
-            float(flow['Amount']) for flow in wallet_flows if 'Deposit' in flow['Type'])
+            float(flow['Amount']) for flow in wallet_flows if flow['Direction'] == 'Deposit')
         total_withdrawals = sum(
-            float(flow['Amount']) for flow in wallet_flows if 'Withdrawal' in flow['Type'])
+            float(flow['Amount']) for flow in wallet_flows if flow['Direction'] == 'Withdrawal')
         total_capital = total_deposits - total_withdrawals
 
         # 2. Get Current Balance
@@ -160,12 +160,18 @@ class DataProcessor:
         return sorted(spot_log, key=lambda x: x['Time'], reverse=True)
 
     @staticmethod
-    def process_wallet_flows(deposit_withdraw_data: Dict[str, List[Dict]]) -> List[Dict]:
+    def process_wallet_flows(deposit_withdraw_data: Dict[str, List[Dict]], internal_deposits: List[Dict] = None) -> List[Dict]:
         """
         Processes deposits/withdrawals for the 'Wallet Flows' log (Inflow/Outflow requirement).
+        Combines on-chain deposits/withdrawals with internal (off-chain) deposits.
         """
         all_flows = deposit_withdraw_data.get(
             'deposits', []) + deposit_withdraw_data.get('withdrawals', [])
+
+        # Add internal deposits if provided
+        if internal_deposits:
+            all_flows.extend(internal_deposits)
+
         if not all_flows:
             return []
 
@@ -174,13 +180,32 @@ class DataProcessor:
 
         flow_data = []
         for flow in all_flows:
-            # 'successAt' is present for deposits, but not for withdrawals.
-            is_deposit = 'successAt' in flow
+            # Check if it's an internal deposit (has 'type' field with value 1)
+            is_internal_deposit = flow.get('type') == 1
+
+            # 'successAt' is present for on-chain deposits, but not for withdrawals or internal deposits
+            is_onchain_deposit = 'successAt' in flow
+
+            # Determine direction and network
+            if is_internal_deposit:
+                direction = "Deposit"
+                network = "Off-chain"
+            elif is_onchain_deposit:
+                direction = "Deposit"
+                network = "On-chain"
+            else:
+                direction = "Withdrawal"
+                network = "On-chain"
 
             try:
-                # Get deposit time from 'successAt', or withdrawal time from 'updateTime'
-                timestamp_ms = int(flow.get('successAt')
-                                   or flow.get('updateTime', 0))
+                # Get timestamp based on transaction type
+                if is_internal_deposit:
+                    # Internal deposits use 'createdTime' (in seconds, not milliseconds)
+                    timestamp_ms = int(flow.get('createdTime', 0)) * 1000
+                else:
+                    # On-chain: use 'successAt' for deposits or 'updateTime' for withdrawals
+                    timestamp_ms = int(flow.get('successAt')
+                                       or flow.get('updateTime', 0))
 
                 # Handle cases where the timestamp might still be zero
                 if timestamp_ms == 0:
@@ -191,14 +216,53 @@ class DataProcessor:
                 timestamp = datetime.fromtimestamp(
                     timestamp_ms/1000).strftime('%Y-%m-%d %H:%M:%S')
 
+                # Get status and normalize it
+                status = flow.get('status', '')
+
+                # Internal deposits use numeric status codes
+                if is_internal_deposit and isinstance(status, int):
+                    internal_status_map = {
+                        1: 'Processing',
+                        2: 'Success',
+                        3: 'Failed'
+                    }
+                    status = internal_status_map.get(status, str(status))
+
+                # On-chain deposits use numeric status codes
+                elif is_onchain_deposit and isinstance(status, int):
+                    onchain_deposit_status_map = {
+                        0: 'Unknown',
+                        1: 'To Be Confirmed',
+                        2: 'Processing',
+                        3: 'Success',
+                        4: 'Failed',
+                        10011: 'Pending Credit to Funding Pool',
+                        10012: 'Credited to Funding Pool'
+                    }
+                    status = onchain_deposit_status_map.get(
+                        status, str(status))
+
+                # Withdrawals use string status - normalize capitalization
+                elif isinstance(status, str):
+                    status = status.capitalize()
+
+                # For internal deposits, address is email/phone, otherwise it's blockchain chain
+                if is_internal_deposit:
+                    chain_or_address = flow.get('address', '')
+                    tx_id = flow.get('txID', '')
+                else:
+                    chain_or_address = flow.get('chain', '')
+                    tx_id = flow.get('txID', '')
+
                 flow_data.append({
                     "Time": timestamp,
-                    "Type": "Deposit (Inflow)" if is_deposit else "Withdrawal (Outflow)",
+                    "Direction": direction,
+                    "Network": network,
                     "Coin": flow.get('coin', ''),
                     "Amount": flow.get('amount', ''),
-                    "Status": flow.get('status', ''),
-                    "Chain": flow.get('chain', ''),
-                    "TX ID": flow.get('txID', ''),
+                    "Status": status,
+                    "Chain/Address": chain_or_address,
+                    "TX ID": tx_id,
                 })
             except Exception as e:
                 print(f"⚠️  Error processing wallet flow: {e}")
@@ -242,3 +306,93 @@ class DataProcessor:
                 continue
 
         return sorted(transfer_log, key=lambda x: x['Time'], reverse=True)
+
+    @staticmethod
+    def process_universal_transfer_data(transfers: List[Dict]) -> List[Dict]:
+        """
+        Processes universal transfer records to create the 'Universal Transfers' log.
+        """
+        if not transfers:
+            return []
+
+        print(
+            f"   - Processing {len(transfers)} universal transfers for 'Universal Transfers'...")
+
+        transfer_log = []
+        for transfer in transfers:
+            try:
+                timestamp_ms = int(transfer.get('timestamp', 0))
+                if timestamp_ms == 0:
+                    print(
+                        "⚠️  Warning: Found a universal transfer with a zero timestamp. Skipping.")
+                    continue
+
+                timestamp = datetime.fromtimestamp(
+                    timestamp_ms/1000).strftime('%Y-%m-%d %H:%M:%S')
+
+                transfer_log.append({
+                    "Time": timestamp,
+                    "Transfer ID": transfer.get('transferId', ''),
+                    "Coin": transfer.get('coin', ''),
+                    "Amount": transfer.get('amount', ''),
+                    "From Member ID": transfer.get('fromMemberId', ''),
+                    "To Member ID": transfer.get('toMemberId', ''),
+                    "From Account": transfer.get('fromAccountType', ''),
+                    "To Account": transfer.get('toAccountType', ''),
+                    "Status": transfer.get('status', ''),
+                })
+            except Exception as e:
+                print(f"⚠️  Error processing universal transfer: {e}")
+                continue
+
+        return sorted(transfer_log, key=lambda x: x['Time'], reverse=True)
+
+    @staticmethod
+    def process_convert_history_data(conversions: List[Dict]) -> List[Dict]:
+        """
+        Processes convert history records to create the 'Convert History' log.
+        """
+        if not conversions:
+            return []
+
+        print(
+            f"   - Processing {len(conversions)} conversions for 'Convert History'...")
+
+        conversion_log = []
+        for conversion in conversions:
+            try:
+                timestamp_ms = int(conversion.get('createdAt', 0))
+                if timestamp_ms == 0:
+                    print(
+                        "⚠️  Warning: Found a conversion with a zero timestamp. Skipping.")
+                    continue
+
+                timestamp = datetime.fromtimestamp(
+                    timestamp_ms/1000).strftime('%Y-%m-%d %H:%M:%S')
+
+                # Format the conversion rate for better readability
+                convert_rate = conversion.get('convertRate', '')
+                if convert_rate:
+                    try:
+                        rate_float = float(convert_rate)
+                        convert_rate = f"{rate_float:.8f}".rstrip(
+                            '0').rstrip('.')
+                    except ValueError:
+                        pass
+
+                conversion_log.append({
+                    "Time": timestamp,
+                    "Exchange TX ID": conversion.get('exchangeTxId', ''),
+                    "From Coin": conversion.get('fromCoin', ''),
+                    "To Coin": conversion.get('toCoin', ''),
+                    "From Amount": conversion.get('fromAmount', ''),
+                    "To Amount": conversion.get('toAmount', ''),
+                    "Convert Rate": convert_rate,
+                    "Account Type": conversion.get('accountType', ''),
+                    "Status": conversion.get('exchangeStatus', ''),
+                })
+            except Exception as e:
+                print(f"⚠️  Error processing conversion: {e}")
+                continue
+
+        return sorted(conversion_log, key=lambda x: x['Time'], reverse=True)

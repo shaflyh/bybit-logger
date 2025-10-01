@@ -137,14 +137,9 @@ class BybitService:
             # Small delay to avoid rate limiting
             time.sleep(0.2)
 
-        # Log final combined response
-        combined_response = {
-            'executions': {'result': {'list': all_executions}},
-            'positions': {'result': {'list': all_positions}},
-            'chunks_processed': chunk_count
-        }
-        self.log_response(combined_response,
-                          "executions_and_positions_combined")
+        # Log final response
+        self.log_response(all_executions, "executions")
+        self.log_response(all_positions, "positions")
 
         print(
             f"✅ Total found: {len(all_executions)} futures executions, {len(all_positions)} closed positions")
@@ -264,6 +259,7 @@ class BybitService:
                 response = self.session.get_withdrawal_records(
                     startTime=str(start_timestamp),
                     endTime=str(end_timestamp),
+                    withdrawType=2,
                     limit=50
                 )
                 if response.get('retCode') == 0:
@@ -294,9 +290,69 @@ class BybitService:
             "withdrawals": all_withdrawals
         }
 
-        self.log_response(deposits_withdrawals, "deposits_withdrawals")
+        self.log_response(all_deposits, "deposits")
+        self.log_response(all_withdrawals, "withdrawals")
 
         return deposits_withdrawals
+
+    def get_internal_deposit_records(self, days_back: Optional[int] = None) -> List[Dict]:
+        """Get internal deposit records (off-chain deposits within Bybit platform)"""
+        days_back = 365  # Use same timeframe as deposits/withdrawals
+        print(
+            f"💸 Fetching internal deposit records (last {days_back} days)...")
+
+        # Calculate date ranges in 30-day chunks (API limit)
+        end_time = datetime.now()
+        start_time = end_time - timedelta(days=days_back)
+
+        all_deposits = []
+
+        # Process in 30-day chunks
+        current_start = start_time
+        chunk_count = 0
+
+        while current_start < end_time:
+            chunk_count += 1
+            current_end = min(current_start + timedelta(days=30), end_time)
+
+            start_timestamp = int(current_start.timestamp() * 1000)
+            end_timestamp = int(current_end.timestamp() * 1000)
+
+            print(
+                f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
+
+            try:
+                response = self.session.get_internal_deposit_records(
+                    startTime=str(start_timestamp),
+                    endTime=str(end_timestamp),
+                    limit=50
+                )
+
+                if response.get('retCode') == 0:
+                    chunk_deposits = response.get('result', {}).get('rows', [])
+                    all_deposits.extend(chunk_deposits)
+                    if chunk_deposits:
+                        print(
+                            f"    ✅ Found {len(chunk_deposits)} internal deposits in this chunk")
+                else:
+                    print(f"    ⚠️  API Error: {response.get('retMsg')}")
+            except Exception as e:
+                print(
+                    f"    ⚠️  Error fetching internal deposits for chunk {chunk_count}: {e}")
+
+            # Move to next chunk
+            current_start = current_end
+
+            # Small delay to avoid rate limiting
+            time.sleep(0.2)
+
+        print(f"✅ Total found: {len(all_deposits)} internal deposits")
+
+        # Log the response
+        self.log_response({'result': {'rows': all_deposits}},
+                          "internal_deposits")
+
+        return all_deposits
 
     def get_internal_transfer_records(self, days_back: Optional[int] = None) -> List[Dict]:
         """Get internal transfer records between different account types"""
@@ -357,6 +413,123 @@ class BybitService:
                           "internal_transfers")
 
         return all_transfers
+
+    def get_universal_transfer_records(self, days_back: Optional[int] = None) -> List[Dict]:
+        """Get universal transfer records between different UIDs"""
+        days_back = days_back or Config.DAYS_BACK
+        print(
+            f"🌐 Fetching universal transfer records (last {days_back} days)...")
+
+        # Calculate date ranges in 7-day chunks
+        end_time = datetime.now()
+        start_time = end_time - timedelta(days=days_back)
+
+        all_transfers = []
+
+        # Process in 7-day chunks
+        current_start = start_time
+        chunk_count = 0
+
+        while current_start < end_time:
+            chunk_count += 1
+            current_end = min(current_start + timedelta(days=7), end_time)
+
+            start_timestamp = int(current_start.timestamp() * 1000)
+            end_timestamp = int(current_end.timestamp() * 1000)
+
+            print(
+                f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
+
+            try:
+                response = self.session.get_universal_transfer_records(
+                    startTime=str(start_timestamp),
+                    endTime=str(end_timestamp),
+                    limit=50
+                )
+
+                if response.get('retCode') == 0:
+                    chunk_transfers = response.get(
+                        'result', {}).get('list', [])
+                    all_transfers.extend(chunk_transfers)
+                    if chunk_transfers:
+                        print(
+                            f"    ✅ Found {len(chunk_transfers)} universal transfers in this chunk")
+                else:
+                    print(f"    ⚠️  API Error: {response.get('retMsg')}")
+            except Exception as e:
+                print(
+                    f"    ⚠️  Error fetching universal transfers for chunk {chunk_count}: {e}")
+
+            # Move to next chunk
+            current_start = current_end
+
+            # Small delay to avoid rate limiting
+            time.sleep(0.2)
+
+        print(f"✅ Total found: {len(all_transfers)} universal transfers")
+
+        # Log the response
+        self.log_response({'result': {'list': all_transfers}},
+                          "universal_transfers")
+
+        return all_transfers
+
+    def get_convert_history(self) -> List[Dict]:
+        """Get convert history using pagination"""
+        print("🔄 Fetching convert history...")
+
+        all_conversions = []
+        page = 1
+        limit = 100  # Maximum allowed per API documentation
+
+        while True:
+            print(f"  📄 Fetching page {page}...")
+
+            try:
+                response = self.session.get_convert_history(
+                    index=page,
+                    limit=limit
+                )
+
+                if response.get('retCode') == 0:
+                    result = response.get('result', {})
+                    conversions = result.get('list', [])
+
+                    if not conversions:
+                        print(
+                            f"    ✅ No more conversions found. Finished at page {page}")
+                        break
+
+                    all_conversions.extend(conversions)
+                    print(
+                        f"    ✅ Found {len(conversions)} conversions on page {page}")
+
+                    # If we got less than the limit, we've reached the end
+                    if len(conversions) < limit:
+                        print(
+                            f"    ✅ Reached end of data (got {len(conversions)} < {limit})")
+                        break
+
+                    page += 1
+                else:
+                    print(f"    ⚠️  API Error: {response.get('retMsg')}")
+                    break
+            except Exception as e:
+                print(
+                    f"    ⚠️  Error fetching convert history page {page}: {e}")
+                break
+
+            # Small delay to avoid rate limiting
+            time.sleep(0.2)
+
+        print(
+            f"✅ Total found: {len(all_conversions)} conversions across {page} pages")
+
+        # Log the response
+        self.log_response(
+            {'result': {'list': all_conversions}}, "convert_history")
+
+        return all_conversions
 
     def match_executions_to_positions(self, executions: List[Dict], positions: List[Dict]) -> List[Dict]:
         """Match executions to positions to calculate proper hold times"""

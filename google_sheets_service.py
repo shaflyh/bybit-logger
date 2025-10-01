@@ -206,7 +206,7 @@ class GoogleSheetsService:
             for range_str in buy_ranges:
                 try:
                     worksheet.format(range_str, green_text)
-                    time.sleep(0.5)  # Increased delay between range operations
+                    time.sleep(0.8)  # Increased delay between range operations
                 except Exception as e:
                     print(f"⚠️  Could not format Buy range {range_str}: {e}")
 
@@ -214,7 +214,7 @@ class GoogleSheetsService:
             for range_str in sell_ranges:
                 try:
                     worksheet.format(range_str, red_text)
-                    time.sleep(0.5)  # Increased delay
+                    time.sleep(0.8)  # Increased delay
                 except Exception as e:
                     print(f"⚠️  Could not format Sell range {range_str}: {e}")
 
@@ -222,7 +222,7 @@ class GoogleSheetsService:
             for range_str in profit_ranges:
                 try:
                     worksheet.format(range_str, green_bg)
-                    time.sleep(0.5)  # Increased delay
+                    time.sleep(0.8)  # Increased delay
                 except Exception as e:
                     print(
                         f"⚠️  Could not format Profit range {range_str}: {e}")
@@ -231,7 +231,7 @@ class GoogleSheetsService:
             for range_str in loss_ranges:
                 try:
                     worksheet.format(range_str, red_bg)
-                    time.sleep(0.5)  # Increased delay
+                    time.sleep(0.8)  # Increased delay
                 except Exception as e:
                     print(f"⚠️  Could not format Loss range {range_str}: {e}")
 
