@@ -44,9 +44,9 @@ class WebSocketService:
             print("   - Subscribed to 'position' stream.")
             self.ws.wallet_stream(callback=self.callback_handler.handle_wallet)
             print("   - Subscribed to 'wallet' stream.")
-            # NEW: Subscribe to the order stream
-            self.ws.order_stream(callback=self.callback_handler.handle_order)
-            print("   - Subscribed to 'order' stream.")
+            # # Subscribe to the order stream
+            # self.ws.order_stream(callback=self.callback_handler.handle_order)
+            # print("   - Subscribed to 'order' stream.")
 
             print("\n✅ All streams started successfully.")
             return True
@@ -65,9 +65,9 @@ class DataProcessor:
 
     EXECUTION_HEADERS = ["Timestamp", "Category", "Symbol", "Side", "PnL", "Fee", "Exec Price",
                          "Exec Qty", "Exec Value", "Create Type", "Order Type", "Maker/Taker", "OrderID", "ExecutionID"]
-    # NEW: Headers for the new Live Orders sheet
-    ORDER_HEADERS = ["Updated Time", "Symbol", "Side", "Order Type", "Status", "Price", "Qty",
-                     "Avg Fill Price", "Filled Qty", "Remaining Qty", "Take Profit", "Stop Loss", "Order ID"]
+    # # Headers for the new Live Orders sheet
+    # ORDER_HEADERS = ["Updated Time", "Symbol", "Side", "Order Type", "Status", "Price", "Qty",
+    #                  "Avg Fill Price", "Filled Qty", "Remaining Qty", "Take Profit", "Stop Loss", "Order ID"]
     POSITION_HEADERS = ["Symbol", "Side", "Size", "Entry Price", "Mark Price",
                         "Value (USD)", "Unrealized PnL", "Leverage", "Liq. Price", "Updated"]
     WALLET_HEADERS = ["Coin", "Balance", "Available", "Value (USD)"]
@@ -100,34 +100,34 @@ class DataProcessor:
             print(f"⚠️  Could not format execution: {e}")
             return None
 
-    # NEW: Function to process order stream data
-    @staticmethod
-    def format_order(order: Dict) -> Optional[Dict]:
-        """Formats an order message for the 'Live Orders' snapshot."""
-        try:
-            # We only want to see orders that are still active
-            active_statuses = ["New", "PartiallyFilled", "Untriggered"]
-            if order.get("orderStatus") not in active_statuses:
-                return None
+    # # Function to process order stream data
+    # @staticmethod
+    # def format_order(order: Dict) -> Optional[Dict]:
+    #     """Formats an order message for the 'Live Orders' snapshot."""
+    #     try:
+    #         # We only want to see orders that are still active
+    #         active_statuses = ["New", "PartiallyFilled", "Untriggered"]
+    #         if order.get("orderStatus") not in active_statuses:
+    #             return None
 
-            return {
-                "Updated Time": datetime.fromtimestamp(int(order.get("updatedTime", 0)) / 1000).strftime('%Y-%m-%d %H:%M:%S'),
-                "Symbol": order.get("symbol", ""),
-                "Side": order.get("side", ""),
-                "Order Type": order.get("orderType", ""),
-                "Status": order.get("orderStatus", ""),
-                "Price": order.get("price", "0"),
-                "Qty": order.get("qty", "0"),
-                "Avg Fill Price": order.get("avgPrice", "0"),
-                "Filled Qty": order.get("cumExecQty", "0"),
-                "Remaining Qty": order.get("leavesQty", "0"),
-                "Take Profit": order.get("takeProfit", "0"),
-                "Stop Loss": order.get("stopLoss", "0"),
-                "Order ID": order.get("orderId", ""),
-            }
-        except (ValueError, TypeError, KeyError) as e:
-            print(f"⚠️  Could not format order: {e} | Data: {order}")
-            return None
+    #         return {
+    #             "Updated Time": datetime.fromtimestamp(int(order.get("updatedTime", 0)) / 1000).strftime('%Y-%m-%d %H:%M:%S'),
+    #             "Symbol": order.get("symbol", ""),
+    #             "Side": order.get("side", ""),
+    #             "Order Type": order.get("orderType", ""),
+    #             "Status": order.get("orderStatus", ""),
+    #             "Price": order.get("price", "0"),
+    #             "Qty": order.get("qty", "0"),
+    #             "Avg Fill Price": order.get("avgPrice", "0"),
+    #             "Filled Qty": order.get("cumExecQty", "0"),
+    #             "Remaining Qty": order.get("leavesQty", "0"),
+    #             "Take Profit": order.get("takeProfit", "0"),
+    #             "Stop Loss": order.get("stopLoss", "0"),
+    #             "Order ID": order.get("orderId", ""),
+    #         }
+    #     except (ValueError, TypeError, KeyError) as e:
+    #         print(f"⚠️  Could not format order: {e} | Data: {order}")
+    #         return None
 
     @staticmethod
     def format_position(position: Dict) -> Optional[Dict]:
@@ -160,7 +160,7 @@ class CallbackHandler:
     def __init__(self, sheets_service: GoogleSheetsService):
         self.sheets = sheets_service
         self.logged_exec_ids = set()
-        self.open_orders = {}  # NEW: State tracking for open orders
+        # self.open_orders = {}  # NEW: State tracking for open orders
         self.open_positions = {}
 
     def handle_execution(self, message: Dict):
@@ -179,32 +179,32 @@ class CallbackHandler:
         except Exception as e:
             print(f"Error handling execution: {e}")
 
-    # NEW: Handler for the order stream
-    def handle_order(self, message: Dict):
-        updated = False
-        try:
-            for order_data in message.get("data", []):
-                order_id = order_data.get("orderId")
-                if not order_id:
-                    continue
+    # # Handler for the order stream
+    # def handle_order(self, message: Dict):
+    #     updated = False
+    #     try:
+    #         for order_data in message.get("data", []):
+    #             order_id = order_data.get("orderId")
+    #             if not order_id:
+    #                 continue
 
-                formatted_order = DataProcessor.format_order(order_data)
+    #             formatted_order = DataProcessor.format_order(order_data)
 
-                # If the order is active, add/update it in our state
-                if formatted_order:
-                    self.open_orders[order_id] = formatted_order
-                    updated = True
-                # If it's not active, remove it from our state if it exists
-                elif order_id in self.open_orders:
-                    del self.open_orders[order_id]
-                    updated = True
+    #             # If the order is active, add/update it in our state
+    #             if formatted_order:
+    #                 self.open_orders[order_id] = formatted_order
+    #                 updated = True
+    #             # If it's not active, remove it from our state if it exists
+    #             elif order_id in self.open_orders:
+    #                 del self.open_orders[order_id]
+    #                 updated = True
 
-            if updated:
-                self.sheets.overwrite_data("Live Orders", list(
-                    self.open_orders.values()), headers=DataProcessor.ORDER_HEADERS)
-                print(f"🔄 Synced {len(self.open_orders)} open orders.")
-        except Exception as e:
-            print(f"Error handling order update: {e}")
+    #         if updated:
+    #             self.sheets.overwrite_data("Live Orders", list(
+    #                 self.open_orders.values()), headers=DataProcessor.ORDER_HEADERS)
+    #             print(f"🔄 Synced {len(self.open_orders)} open orders.")
+    #     except Exception as e:
+    #         print(f"Error handling order update: {e}")
 
     def handle_position(self, message: Dict):
         updated = False
@@ -258,7 +258,7 @@ class PyBitRealTimeLogger:
             if self.websocket_service.start_streams():
                 print("\n🎉 Real-time logging is now ACTIVE!")
                 print("   - Executions will be appended to 'Real-Time Log'")
-                print("   - Pending orders will be synced to 'Live Orders'")  # NEW
+                # print("   - Pending orders will be synced to 'Live Orders'")  # NEW
                 print("   - Open positions will be synced to 'Live Open Positions'")
                 print("   - Wallet balances will be synced to 'Live Wallet Balance'")
                 print(
