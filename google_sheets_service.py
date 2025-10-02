@@ -315,8 +315,8 @@ class GoogleSheetsService:
 
             self.format_headers(worksheet)
 
-            # Apply conditional formatting for futures data with additional delay
-            if sheet_name == "Futures History" and Config.ENABLE_FORMATTING:
+            # Apply conditional formatting for futures and spot data with additional delay
+            if sheet_name in ["Futures History", "Spot History"] and Config.ENABLE_FORMATTING:
                 print(
                     "⏳ Applying conditional formatting (this may take a while due to rate limits)...")
                 time.sleep(3)  # Extra delay before formatting
