@@ -143,7 +143,6 @@ class DataProcessor:
                 value = qty * price
 
                 spot_log.append({
-                    "Time": exec_time.strftime('%Y-%m-%d %H:%M:%S'),
                     "Symbol": trade.get('symbol', ''),
                     "Side": trade.get('side', ''),
                     "Quantity": f"{qty:.6f}".rstrip('0').rstrip('.'),
@@ -151,6 +150,7 @@ class DataProcessor:
                     "Total Value": f"{value:.4f}",
                     "Fee": trade.get('execFee', ''),
                     "Fee Currency": trade.get('feeCurrency', ''),
+                    "Time": exec_time.strftime('%Y-%m-%d %H:%M:%S'),
                 })
             except Exception as e:
                 print(
@@ -255,13 +255,13 @@ class DataProcessor:
                     tx_id = flow.get('txID', '')
 
                 flow_data.append({
-                    "Time": timestamp,
+                    "Coin": flow.get('coin', ''),
                     "Direction": direction,
                     "Network": network,
-                    "Coin": flow.get('coin', ''),
                     "Amount": flow.get('amount', ''),
-                    "Status": status,
                     "Chain/Address": chain_or_address,
+                    "Status": status,
+                    "Time": timestamp,
                     "TX ID": tx_id,
                 })
             except Exception as e:

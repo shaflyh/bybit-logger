@@ -81,8 +81,6 @@ class DataProcessor:
             pnl = float(execution.get("execPnl", 0))
             fee = float(execution.get("execFee", 0))
             return {
-                "Timestamp": datetime.fromtimestamp(int(execution.get("execTime", 0)) / 1000).strftime('%Y-%m-%d %H:%M:%S'),
-                "Category": execution.get("category", "").capitalize(),
                 "Symbol": execution.get("symbol", ""),
                 "Side": execution.get("side", ""),
                 "PnL": f"{pnl:.8f}",
@@ -90,6 +88,8 @@ class DataProcessor:
                 "Exec Price": execution.get("execPrice", "0"),
                 "Exec Qty": execution.get("execQty", "0"),
                 "Exec Value": execution.get("execValue", "0"),
+                "Category": execution.get("category", "").capitalize(),
+                "Timestamp": datetime.fromtimestamp(int(execution.get("execTime", 0)) / 1000).strftime('%Y-%m-%d %H:%M:%S'),
                 "Create Type": execution.get("createType", "N/A"),
                 "Order Type": execution.get("orderType", ""),
                 "Maker/Taker": "Maker" if execution.get("isMaker") else "Taker",
