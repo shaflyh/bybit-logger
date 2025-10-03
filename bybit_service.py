@@ -154,13 +154,31 @@ class BybitService:
         return enhanced_positions
 
     def get_spot_trades(self, days_back: Optional[int] = None) -> List[Dict]:
-        """Get spot trading history"""
-        days_back = days_back or Config.DAYS_BACK
-        print(f"📈 Fetching spot trades (last {days_back} days)...")
-
-        # Calculate date ranges in 7-day chunks
+        """Get spot trading history starting from configured start date"""
         end_time = datetime.now()
-        start_time = end_time - timedelta(days=days_back)
+
+        # Parse start date from config
+        try:
+            start_time = datetime.strptime(
+                Config.SPOT_HISTORY_START_DATE, "%Y-%m-%d")
+        except ValueError:
+            print(
+                f"⚠️  Invalid SPOT_HISTORY_START_DATE format. Using default (7 days back)")
+            start_time = end_time - timedelta(days=7)
+
+        # Calculate date range
+        date_range_days = (end_time - start_time).days
+
+        # Warn if exceeding API limit (2 years = 730 days)
+        if date_range_days > 730:
+            print(
+                f"⚠️  WARNING: Date range ({date_range_days} days) exceeds Bybit API limit of 2 years (730 days)")
+            print(f"⚠️  Limiting query to last 730 days from today")
+            start_time = end_time - timedelta(days=730)
+            date_range_days = 730
+
+        print(
+            f"📈 Fetching spot trades from {start_time.strftime('%Y-%m-%d')} to {end_time.strftime('%Y-%m-%d')} ({date_range_days} days)...")
 
         all_trades = []
 
