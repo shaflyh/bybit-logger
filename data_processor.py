@@ -54,7 +54,7 @@ class DataProcessor:
         date_range_str = f"{start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')}"
 
         overview_data = {
-            "Total Capital": f"{total_capital:.2f}",
+            # "Total Capital": f"{total_capital:.2f}",
             "Current Balance": f"{current_balance:.2f}",
             "Net PnL": f"{net_pnl:+.2f}",
             "Win Rate": win_rate,

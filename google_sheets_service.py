@@ -353,8 +353,8 @@ class GoogleSheetsService:
             headers = ["Metric", "Value", "Notes"]
             rows_to_write = [
                 headers,
-                ["Total Capital", overview_data.get(
-                    "Total Capital"), "Sum of deposits minus withdrawals"],
+                # ["Total Capital", overview_data.get(
+                #     "Total Capital"), "Sum of deposits minus withdrawals"],
                 ["Current Balance", overview_data.get(
                     "Current Balance"), "From wallet balance (equity)"],
                 ["Net PnL", overview_data.get("Net PnL"), overview_data.get(
