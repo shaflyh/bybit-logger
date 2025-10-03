@@ -333,9 +333,9 @@ class GoogleSheetsService:
             print(f"❌ Error overwriting data in '{sheet_name}': {e}")
             return False
 
-    def overwrite_portfolio_overview(self, overview_data: Dict) -> bool:
+    def overwrite_portfolio_overview(self, overview_data: Dict, asset_allocation: Optional[List[Dict]] = None) -> bool:
         """
-        Creates or overwrites a sheet with portfolio overview metrics.
+        Creates or overwrites a sheet with portfolio overview metrics and asset allocation.
         """
         if not overview_data:
             return False
@@ -364,6 +364,23 @@ class GoogleSheetsService:
                 ["Date Range", overview_data.get("Date Range"), ""]
             ]
 
+            # Add asset allocation if provided
+            if asset_allocation:
+                rows_to_write.append(["", "", "", ""])  # Empty row for spacing
+                rows_to_write.append(["Asset Allocation", "", "", ""])
+                # Add column headers for asset allocation
+                rows_to_write.append(
+                    ["Coin", "Balance", "USD Value", "Percentage"])
+
+                # Add asset allocation data
+                for asset in asset_allocation:
+                    rows_to_write.append([
+                        asset.get('Coin', ''),
+                        asset.get('Balance', ''),
+                        asset.get('USD Value', ''),
+                        asset.get('Percentage', '')
+                    ])
+
             worksheet.update(
                 rows_to_write, value_input_option=ValueInputOption.user_entered)
 
@@ -379,11 +396,120 @@ class GoogleSheetsService:
             # Bold the metric labels
             worksheet.format('A2:A6', {'textFormat': {'bold': True}})
 
+            # Format asset allocation section if present
+            if asset_allocation:
+                asset_title_row = 8  # Row where "Asset Allocation" title is
+                # Row where column headers are (Coin, Balance, USD Value, Percentage)
+                asset_header_row = 9
+                asset_data_start = 10  # First data row
+                asset_data_end = asset_data_start + len(asset_allocation) - 1
+
+                # Bold the "Asset Allocation" title
+                worksheet.format(f'A{asset_title_row}', {
+                                 'textFormat': {'bold': True, 'fontSize': 12}})
+
+                # Bold and style the column headers
+                worksheet.format(f'A{asset_header_row}:D{asset_header_row}', {
+                    'textFormat': {'bold': True},
+                    'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
+                })
+
+                # Bold coin names in data rows
+                worksheet.format(f'A{asset_data_start}:A{asset_data_end}', {
+                    'textFormat': {'bold': True}
+                })
+
+            # Add pie chart if asset allocation is present
+            if asset_allocation and Config.ENABLE_FORMATTING:
+                print("   📊 Creating pie chart for asset allocation...")
+                try:
+                    self.add_asset_allocation_chart(
+                        worksheet, asset_allocation)
+                except Exception as e:
+                    print(f"⚠️  Could not create pie chart: {e}")
+
             print(f"✅ Successfully updated '{sheet_name}' sheet.")
             return True
         except Exception as e:
             print(f"❌ Error overwriting data in '{sheet_name}': {e}")
             return False
+
+    def add_asset_allocation_chart(self, worksheet: gspread.Worksheet, asset_allocation: List[Dict]):
+        """
+        Adds a pie chart for asset allocation to the worksheet.
+        Chart uses USD values for sizing and shows percentage labels on slices.
+        """
+        if not asset_allocation:
+            return
+
+        # Calculate the data range for the chart
+        # Row 8: "Asset Allocation" title
+        # Row 9: Column headers (Coin, Balance, USD Value, Percentage)
+        # Row 10+: Data rows
+        # Row index (0-based) for data (skip title and headers)
+        data_start_row = 9
+        data_end_row = data_start_row + len(asset_allocation)
+
+        # Create chart request using Google Sheets API
+        requests = [{
+            "addChart": {
+                "chart": {
+                    "spec": {
+                        "title": "Asset Allocation by USD Value",
+                        "pieChart": {
+                            "legendPosition": "RIGHT_LEGEND",
+                            "domain": {
+                                "sourceRange": {
+                                    "sources": [{
+                                        "sheetId": worksheet.id,
+                                        "startRowIndex": data_start_row,
+                                        "endRowIndex": data_end_row,
+                                        # Column A (Coin names)
+                                        "startColumnIndex": 0,
+                                        "endColumnIndex": 1
+                                    }]
+                                }
+                            },
+                            "series": {
+                                "sourceRange": {
+                                    "sources": [{
+                                        "sheetId": worksheet.id,
+                                        "startRowIndex": data_start_row,
+                                        "endRowIndex": data_end_row,
+                                        # Column C (USD Value - used for slice sizing)
+                                        "startColumnIndex": 2,
+                                        "endColumnIndex": 3
+                                    }]
+                                }
+                            },
+                            "pieSliceTextStyle": {
+                                "fontSize": 10
+                            }
+                        },
+                        "fontName": "Arial"
+                    },
+                    "position": {
+                        "overlayPosition": {
+                            "anchorCell": {
+                                "sheetId": worksheet.id,
+                                "rowIndex": 7,  # Position chart at row 8
+                                # Column E (to the right of data)
+                                "columnIndex": 4
+                            },
+                            "offsetXPixels": 20,
+                            "offsetYPixels": 20,
+                            "widthPixels": 500,
+                            "heightPixels": 400
+                        }
+                    }
+                }
+            }
+        }]
+
+        # Execute the request
+        body = {'requests': requests}
+        self.spreadsheet.batch_update(body)
+        print("   ✅ Pie chart created successfully")
 
     def get_spreadsheet_url(self) -> Optional[str]:
         return self.spreadsheet.url if self.spreadsheet else None

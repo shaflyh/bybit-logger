@@ -396,3 +396,72 @@ class DataProcessor:
                 continue
 
         return sorted(conversion_log, key=lambda x: x['Time'], reverse=True)
+
+    @staticmethod
+    def process_asset_allocation(wallet_balance: Optional[Dict]) -> List[Dict]:
+        """
+        Processes wallet balance data to create asset allocation data.
+        Extracts coin information from the wallet balance response.
+        Returns list sorted by USD value (largest first) with percentage calculations based on USD value.
+        """
+        if not wallet_balance:
+            return []
+
+        # Extract coin list from wallet balance
+        # Structure: wallet_balance['list'][0]['coin'] is an array of coin objects
+        account_list = wallet_balance.get('list', [])
+        if not account_list:
+            return []
+
+        coins = account_list[0].get('coin', [])
+        if not coins:
+            return []
+
+        print(f"   - Processing {len(coins)} coins for asset allocation...")
+
+        # Filter out coins with zero balance and calculate total USD value
+        assets_with_balance = []
+        total_usd_value = 0.0
+
+        for coin in coins:
+            try:
+                wallet_balance_value = float(coin.get('walletBalance', 0))
+                usd_value = float(coin.get('usdValue', 0))
+
+                # Only include coins with positive balance
+                if wallet_balance_value > 0:
+                    assets_with_balance.append({
+                        'coin': coin.get('coin', ''),
+                        'walletBalance': wallet_balance_value,
+                        'usdValue': usd_value
+                    })
+                    total_usd_value += usd_value
+            except (ValueError, TypeError) as e:
+                print(
+                    f"⚠️  Error processing balance for {coin.get('coin', 'Unknown')}: {e}")
+                continue
+
+        # Calculate percentages based on USD value and format data
+        asset_allocation = []
+        for asset in assets_with_balance:
+            percentage = (asset['usdValue'] /
+                          total_usd_value * 100) if total_usd_value > 0 else 0
+            asset_allocation.append({
+                'Coin': asset['coin'],
+                'Balance': f"{asset['walletBalance']:.8f}".rstrip('0').rstrip('.'),
+                'USD Value': f"${asset['usdValue']:.2f}",
+                'Percentage': f"{percentage:.2f}%",
+                '_usd_value': asset['usdValue'],  # For sorting
+                '_percentage_value': percentage  # For chart
+            })
+
+        # Sort by USD value (largest first)
+        sorted_allocation = sorted(
+            asset_allocation,
+            key=lambda x: x['_usd_value'],
+            reverse=True
+        )
+
+        print(
+            f"   - Found {len(sorted_allocation)} coins with non-zero balance (Total: ${total_usd_value:.2f})")
+        return sorted_allocation

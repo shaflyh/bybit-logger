@@ -55,12 +55,17 @@ def main():
             futures_log_data, wallet_balance, wallet_flows_data, Config.DAYS_BACK
         )
 
+        # Process Asset Allocation Data
+        asset_allocation_data = DataProcessor.process_asset_allocation(
+            wallet_balance)
+
         # 4. Update Google Sheets
         print("\n📤 Syncing data to Google Sheets...")
 
         # Overwrite the Portfolio Overview sheet
         if portfolio_overview_data:
-            sheets.overwrite_portfolio_overview(portfolio_overview_data)
+            sheets.overwrite_portfolio_overview(
+                portfolio_overview_data, asset_allocation_data)
 
         if futures_log_data:
             headers = list(futures_log_data[0].keys())
@@ -100,7 +105,10 @@ def main():
 
         print("\n📈 Summary of data synced:")
         if portfolio_overview_data:
-            print("   - Portfolio Overview: Updated with latest stats.")
+            print("   - Portfolio Overview: Updated with latest stats")
+        if asset_allocation_data:
+            print(
+                f"   - Asset Allocation: {len(asset_allocation_data)} coins with balance")
         print(
             f"   - Futures History: {len(futures_log_data)} closed positions")
         print(f"   - Spot History: {len(spot_log_data)} trades")
