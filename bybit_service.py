@@ -45,11 +45,24 @@ class BybitService:
             return None
 
     def get_wallet_balance(self, account_type: str = "UNIFIED") -> Optional[Dict]:
-        """Get wallet balance for specified account type"""
+        """
+        Get wallet balance for specified account type.
+
+        Args:
+            account_type: Account type - "UNIFIED" (default), "FUND", "CONTRACT", or "SPOT"
+
+        Returns:
+            Wallet balance data or None if error
+        """
         print(f"💰 Fetching {account_type} wallet balance...")
         try:
             response = self.session.get_wallet_balance(
                 accountType=account_type)
+
+            # Log the response to JSON
+            self.log_response(
+                response, f'wallet_balance_{account_type.lower()}')
+
             if response.get('retCode') == 0:
                 return response.get('result')
             else:
@@ -58,6 +71,10 @@ class BybitService:
         except Exception as e:
             print(f"❌ Error: {e}")
             return None
+
+    def get_funding_wallet_balance(self) -> Optional[Dict]:
+        """Get funding wallet balance (convenience method)"""
+        return self.get_wallet_balance(account_type="FUND")
 
     def get_futures_executions_with_positions(self, days_back: Optional[int] = None) -> Tuple[List[Dict], List[Dict]]:
         """Get futures executions and closed positions with proper timing"""

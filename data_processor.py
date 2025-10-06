@@ -10,28 +10,34 @@ class DataProcessor:
     @staticmethod
     def process_portfolio_overview(
         futures_history: List[Dict],
-        wallet_balance: Optional[Dict],
-        wallet_flows: List[Dict],
-        # Changed to portfolio_start_date string (YYYY-MM-DD format)
+        wallet_balance_unified: Optional[Dict],
+        wallet_balance_fund: Optional[Dict],
         portfolio_start_date: str
     ) -> Optional[Dict]:
         """
         Calculates high-level portfolio overview metrics.
         Filters futures_history to only include trades closed within the portfolio date range.
+
+        Args:
+            wallet_balance_unified: UNIFIED account wallet balance
+            wallet_balance_fund: FUND (Funding) wallet balance
         """
-        if not wallet_balance:
+        if not wallet_balance_unified:
             return None
 
-        # 1. Calculate Total Capital
-        total_deposits = sum(
-            float(flow['Amount']) for flow in wallet_flows if flow['Direction'] == 'Deposit')
-        total_withdrawals = sum(
-            float(flow['Amount']) for flow in wallet_flows if flow['Direction'] == 'Withdrawal')
-        total_capital = total_deposits - total_withdrawals
+        # 1. Get Current Balance (Unified) and Total Balance (Unified + Fund)
+        unified_balance = float(
+            wallet_balance_unified['list'][0].get('totalEquity', 0))
 
-        # 2. Get Current Balance
-        current_balance = float(
-            wallet_balance['list'][0].get('totalEquity', 0))
+        # Calculate Funding wallet balance (sum of all coin USD values)
+        fund_balance = 0.0
+        if wallet_balance_fund and wallet_balance_fund.get('list'):
+            fund_coins = wallet_balance_fund['list'][0].get('coin', [])
+            fund_balance = sum(float(coin.get('usdValue', 0))
+                               for coin in fund_coins)
+
+        # 2. Total Balance = UNIFIED + FUND
+        total_balance = unified_balance + fund_balance
 
         # 3. Parse portfolio start date and filter futures history
         try:
@@ -87,12 +93,14 @@ class DataProcessor:
         date_range_str = f"{start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')}"
 
         overview_data = {
-            # "Total Capital": f"{total_capital:.2f}",
-            "Current Balance": f"{current_balance:.2f}",
+            "Total Balance": f"{total_balance:.2f}",
+            "Current Balance": f"{unified_balance:.2f}",
             "Net PnL": f"{net_pnl:+.2f}",
             "Win Rate": win_rate,
             "Date Range": date_range_str,  # Use the newly calculated range
             "Notes": {
+                "Total Balance": f"Unified (${unified_balance:.2f}) + Fund (${fund_balance:.2f})",
+                "Current Balance": "Unified trading account",
                 "Net PnL": f"Across {total_trades} trades",
                 "Win Rate": f"{winning_trades} wins / {total_trades} trades"
             }

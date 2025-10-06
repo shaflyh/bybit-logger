@@ -27,7 +27,8 @@ def main():
 
         # 2. Fetch Data from Bybit
         print("\n📊 Fetching data from Bybit...")
-        wallet_balance = bybit.get_wallet_balance()
+        wallet_balance_unified = bybit.get_wallet_balance("UNIFIED")
+        wallet_balance_fund = bybit.get_funding_wallet_balance()
         spot_trades = bybit.get_spot_trades()
         futures_positions = bybit.get_futures_positions()
         deposit_withdraw = bybit.get_deposit_withdraw_history()
@@ -39,7 +40,7 @@ def main():
         # 3. Process Data
         print("\n🔄 Processing data for final logs...")
         futures_log_data = DataProcessor.process_futures_data(
-            futures_positions, wallet_balance)
+            futures_positions, wallet_balance_unified)
         spot_log_data = DataProcessor.process_spot_data(spot_trades)
         wallet_flows_data = DataProcessor.process_wallet_flows(
             deposit_withdraw, internal_deposits)
@@ -52,12 +53,12 @@ def main():
 
         # Process Portfolio Overview Data
         portfolio_overview_data = DataProcessor.process_portfolio_overview(
-            futures_log_data, wallet_balance, wallet_flows_data, Config.PORTFOLIO_START_DATE
+            futures_log_data, wallet_balance_unified, wallet_balance_fund, Config.PORTFOLIO_START_DATE
         )
 
         # Process Asset Allocation Data
         asset_allocation_data = DataProcessor.process_asset_allocation(
-            wallet_balance)
+            wallet_balance_unified)
 
         # 4. Update Google Sheets
         print("\n📤 Syncing data to Google Sheets...")
