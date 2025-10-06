@@ -58,7 +58,7 @@ def main():
 
         # Process Asset Allocation Data
         asset_allocation_data = DataProcessor.process_asset_allocation(
-            wallet_balance_unified)
+            wallet_balance_unified, wallet_balance_fund)
 
         # 4. Update Google Sheets
         print("\n📤 Syncing data to Google Sheets...")

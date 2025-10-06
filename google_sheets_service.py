@@ -355,8 +355,8 @@ class GoogleSheetsService:
                 headers,
                 ["Total Balance", overview_data.get(
                     "Total Balance"), overview_data.get("Notes", {}).get("Total Balance")],
-                ["Current Balance (Unified)", overview_data.get(
-                    "Current Balance (Unified)"), overview_data.get("Notes", {}).get("Current Balance (Unified)")],
+                ["Current Balance", overview_data.get(
+                    "Current Balance"), overview_data.get("Notes", {}).get("Current Balance")],
                 ["Net PnL", overview_data.get("Net PnL"), overview_data.get(
                     "Notes", {}).get("Net PnL")],
                 ["Win Rate", overview_data.get("Win Rate"), overview_data.get(
@@ -366,19 +366,21 @@ class GoogleSheetsService:
 
             # Add asset allocation if provided
             if asset_allocation:
-                rows_to_write.append(["", "", "", ""])  # Empty row for spacing
-                rows_to_write.append(["Asset Allocation", "", "", ""])
-                # Add column headers for asset allocation
+                # Empty row for spacing
+                rows_to_write.append(["", "", "", "", ""])
+                rows_to_write.append(["Asset Allocation", "", "", "", ""])
+                # Add column headers for asset allocation (Wallet moved to last)
                 rows_to_write.append(
-                    ["Coin", "Balance", "USD Value", "Percentage"])
+                    ["Coin", "Balance", "USD Value", "Percentage", "Wallet"])
 
-                # Add asset allocation data
+                # Add asset allocation data (Wallet moved to last)
                 for asset in asset_allocation:
                     rows_to_write.append([
                         asset.get('Coin', ''),
                         asset.get('Balance', ''),
                         asset.get('USD Value', ''),
-                        asset.get('Percentage', '')
+                        asset.get('Percentage', ''),
+                        asset.get('Wallet', '')
                     ])
 
             worksheet.update(
@@ -388,7 +390,7 @@ class GoogleSheetsService:
 
             # Apply specific formatting to cells for better presentation
             # Format currency values
-            worksheet.format('B2:B4', {'numberFormat': {
+            worksheet.format('B2:B3', {'numberFormat': {
                              'type': 'NUMBER', 'pattern': '#,##0.00 "USDT"'}})
             # Format win rate as a percentage
             worksheet.format(
@@ -399,7 +401,7 @@ class GoogleSheetsService:
             # Format asset allocation section if present
             if asset_allocation:
                 asset_title_row = 8  # Row where "Asset Allocation" title is
-                # Row where column headers are (Coin, Balance, USD Value, Percentage)
+                # Row where column headers are (Coin, Balance, USD Value, Percentage, Wallet)
                 asset_header_row = 9
                 asset_data_start = 10  # First data row
                 asset_data_end = asset_data_start + len(asset_allocation) - 1
@@ -408,8 +410,8 @@ class GoogleSheetsService:
                 worksheet.format(f'A{asset_title_row}', {
                                  'textFormat': {'bold': True, 'fontSize': 12}})
 
-                # Bold and style the column headers
-                worksheet.format(f'A{asset_header_row}:D{asset_header_row}', {
+                # Bold and style the column headers (A through E now, including Wallet)
+                worksheet.format(f'A{asset_header_row}:E{asset_header_row}', {
                     'textFormat': {'bold': True},
                     'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
                 })
@@ -493,8 +495,8 @@ class GoogleSheetsService:
                             "anchorCell": {
                                 "sheetId": worksheet.id,
                                 "rowIndex": 7,  # Position chart at row 8
-                                # Column E (to the right of data)
-                                "columnIndex": 4
+                                # Column G
+                                "columnIndex": 6
                             },
                             "offsetXPixels": 20,
                             "offsetYPixels": 20,

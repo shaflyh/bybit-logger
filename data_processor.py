@@ -439,50 +439,76 @@ class DataProcessor:
         return sorted(conversion_log, key=lambda x: x['Time'], reverse=True)
 
     @staticmethod
-    def process_asset_allocation(wallet_balance: Optional[Dict]) -> List[Dict]:
+    def process_asset_allocation(wallet_balance_unified: Optional[Dict], wallet_balance_fund: Optional[Dict]) -> List[Dict]:
         """
-        Processes wallet balance data to create asset allocation data.
-        Extracts coin information from the wallet balance response.
-        Returns list sorted by USD value (largest first) with percentage calculations based on USD value.
+        Processes wallet balance data from both UNIFIED and FUND wallets to create asset allocation data.
+        Extracts coin information from both wallet balance responses.
+        Returns list sorted by USD value (largest first) with percentage calculations based on combined total USD value.
+
+        Args:
+            wallet_balance_unified: UNIFIED account wallet balance
+            wallet_balance_fund: FUND (Funding) wallet balance
         """
-        if not wallet_balance:
-            return []
-
-        # Extract coin list from wallet balance
-        # Structure: wallet_balance['list'][0]['coin'] is an array of coin objects
-        account_list = wallet_balance.get('list', [])
-        if not account_list:
-            return []
-
-        coins = account_list[0].get('coin', [])
-        if not coins:
-            return []
-
-        print(f"   - Processing {len(coins)} coins for asset allocation...")
-
-        # Filter out coins with zero balance and calculate total USD value
         assets_with_balance = []
         total_usd_value = 0.0
 
-        for coin in coins:
-            try:
-                wallet_balance_value = float(coin.get('walletBalance', 0))
-                usd_value = float(coin.get('usdValue', 0))
+        # Process UNIFIED wallet coins
+        if wallet_balance_unified:
+            account_list = wallet_balance_unified.get('list', [])
+            if account_list:
+                unified_coins = account_list[0].get('coin', [])
+                if unified_coins:
+                    print(
+                        f"   - Processing {len(unified_coins)} UNIFIED wallet coins...")
+                    for coin in unified_coins:
+                        try:
+                            wallet_balance_value = float(
+                                coin.get('walletBalance', 0))
+                            usd_value = float(coin.get('usdValue', 0))
 
-                # Only include coins with positive balance
-                if wallet_balance_value > 0:
-                    assets_with_balance.append({
-                        'coin': coin.get('coin', ''),
-                        'walletBalance': wallet_balance_value,
-                        'usdValue': usd_value
-                    })
-                    total_usd_value += usd_value
-            except (ValueError, TypeError) as e:
-                print(
-                    f"⚠️  Error processing balance for {coin.get('coin', 'Unknown')}: {e}")
-                continue
+                            # Only include coins with positive balance
+                            if wallet_balance_value > 0:
+                                assets_with_balance.append({
+                                    'coin': coin.get('coin', ''),
+                                    'wallet': 'UNIFIED',
+                                    'walletBalance': wallet_balance_value,
+                                    'usdValue': usd_value
+                                })
+                                total_usd_value += usd_value
+                        except (ValueError, TypeError) as e:
+                            print(
+                                f"⚠️  Error processing UNIFIED balance for {coin.get('coin', 'Unknown')}: {e}")
+                            continue
 
-        # Calculate percentages based on USD value and format data
+        # Process FUND wallet coins
+        if wallet_balance_fund:
+            account_list = wallet_balance_fund.get('list', [])
+            if account_list:
+                fund_coins = account_list[0].get('coin', [])
+                if fund_coins:
+                    print(
+                        f"   - Processing {len(fund_coins)} FUND wallet coins...")
+                    for coin in fund_coins:
+                        try:
+                            wallet_balance_value = float(
+                                coin.get('walletBalance', 0))
+                            usd_value = float(coin.get('usdValue', 0))
+
+                            # Only include coins with positive balance
+                            if wallet_balance_value > 0:
+                                assets_with_balance.append({
+                                    'coin': coin.get('coin', ''),
+                                    'wallet': 'FUND',
+                                    'walletBalance': wallet_balance_value,
+                                    'usdValue': usd_value
+                                })
+                                total_usd_value += usd_value
+                        except (ValueError, TypeError) as e:
+                            print(
+                                f"⚠️  Error processing FUND balance for {coin.get('coin', 'Unknown')}: {e}")
+                            continue
+
+        # Calculate percentages based on combined USD value and format data
         asset_allocation = []
         for asset in assets_with_balance:
             percentage = (asset['usdValue'] /
@@ -492,6 +518,7 @@ class DataProcessor:
                 'Balance': f"{asset['walletBalance']:.8f}".rstrip('0').rstrip('.'),
                 'USD Value': f"${asset['usdValue']:.2f}",
                 'Percentage': f"{percentage:.2f}%",
+                'Wallet': asset['wallet'],
                 '_usd_value': asset['usdValue'],  # For sorting
                 '_percentage_value': percentage  # For chart
             })
