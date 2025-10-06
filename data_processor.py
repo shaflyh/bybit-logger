@@ -191,7 +191,7 @@ class DataProcessor:
                     "Total Value": f"{value:.4f}",
                     "Fee": trade.get('execFee', ''),
                     "Fee Currency": trade.get('feeCurrency', ''),
-                    "Time": exec_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    "Time": exec_time.strftime('%b %d, %H:%M'),
                 })
             except Exception as e:
                 print(
