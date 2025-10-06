@@ -12,10 +12,12 @@ class DataProcessor:
         futures_history: List[Dict],
         wallet_balance: Optional[Dict],
         wallet_flows: List[Dict],
-        days_back: int  # Add days_back as a parameter
+        # Changed to portfolio_start_date string (YYYY-MM-DD format)
+        portfolio_start_date: str
     ) -> Optional[Dict]:
         """
         Calculates high-level portfolio overview metrics.
+        Filters futures_history to only include trades closed within the portfolio date range.
         """
         if not wallet_balance:
             return None
@@ -31,13 +33,46 @@ class DataProcessor:
         current_balance = float(
             wallet_balance['list'][0].get('totalEquity', 0))
 
-        # 3. Calculate Net PnL and Win Rate
+        # 3. Parse portfolio start date and filter futures history
+        try:
+            start_date = datetime.strptime(portfolio_start_date, "%Y-%m-%d")
+        except ValueError:
+            print(f"⚠️  Invalid PORTFOLIO_START_DATE format. Using default (7 days back)")
+            start_date = datetime.now() - timedelta(days=7)
+
+        end_date = datetime.now()
+
+        # Filter futures_history to only include trades closed within portfolio date range
+        filtered_futures = []
+        for trade in futures_history:
+            try:
+                # Parse close time from the trade (format: "Sep-15 08:44")
+                close_time_str = trade.get('Close Time', '')
+                if close_time_str:
+                    # Add current year to the close time for proper parsing
+                    close_time = datetime.strptime(
+                        f"{close_time_str} {end_date.year}", "%b-%d %H:%M %Y")
+
+                    # Handle year boundary (if close time is in future, it's from previous year)
+                    if close_time > end_date:
+                        close_time = close_time.replace(year=end_date.year - 1)
+
+                    # Only include trades closed within portfolio date range
+                    if start_date <= close_time <= end_date:
+                        filtered_futures.append(trade)
+            except (ValueError, KeyError) as e:
+                # If parsing fails, skip this trade
+                print(
+                    f"⚠️  Warning: Could not parse close time for trade: {e}")
+                continue
+
+        # 4. Calculate Net PnL and Win Rate from filtered trades
         net_pnl = 0
         winning_trades = 0
-        total_trades = len(futures_history)
+        total_trades = len(filtered_futures)
 
         if total_trades > 0:
-            for trade in futures_history:
+            for trade in filtered_futures:
                 pnl = float(trade.get('PnL', 0))
                 if pnl > 0:
                     winning_trades += 1
@@ -48,9 +83,7 @@ class DataProcessor:
         else:
             win_rate = 0
 
-        # Calculate the date range directly from the DAYS_BACK setting
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days_back)
+        # Calculate the date range display using portfolio start date
         date_range_str = f"{start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')}"
 
         overview_data = {

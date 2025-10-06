@@ -19,6 +19,7 @@ class Config:
     # Data Collection Settings
     DAYS_BACK = int(os.getenv("DAYS_BACK", "7"))
     SPOT_HISTORY_START_DATE = os.getenv("SPOT_HISTORY_START_DATE", "2025-10-03")  # Format: YYYY-MM-DD
+    PORTFOLIO_START_DATE = os.getenv("PORTFOLIO_START_DATE", "2025-09-28")  # Format: YYYY-MM-DD - For portfolio overview calculations
     
     # User Settings
     USER_EMAIL = os.getenv("USER_EMAIL")

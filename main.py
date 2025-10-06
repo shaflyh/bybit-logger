@@ -52,7 +52,7 @@ def main():
 
         # Process Portfolio Overview Data
         portfolio_overview_data = DataProcessor.process_portfolio_overview(
-            futures_log_data, wallet_balance, wallet_flows_data, Config.DAYS_BACK
+            futures_log_data, wallet_balance, wallet_flows_data, Config.PORTFOLIO_START_DATE
         )
 
         # Process Asset Allocation Data
