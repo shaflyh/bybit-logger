@@ -20,7 +20,8 @@ class DataProcessor:
 
         Args:
             wallet_balance_unified: UNIFIED account wallet balance
-            wallet_balance_fund: FUND (Funding) wallet balance
+            wallet_balance_fund: FUND (Funding) wallet balance (pre-enriched with usdValue)
+            portfolio_start_date: Start date for filtering portfolio data
         """
         if not wallet_balance_unified:
             return None
@@ -29,12 +30,13 @@ class DataProcessor:
         unified_balance = float(
             wallet_balance_unified['list'][0].get('totalEquity', 0))
 
-        # Calculate Funding wallet balance (sum of all coin USD values)
+        # Calculate Funding wallet balance
         fund_balance = 0.0
-        if wallet_balance_fund and wallet_balance_fund.get('list'):
-            fund_coins = wallet_balance_fund['list'][0].get('coin', [])
-            fund_balance = sum(float(coin.get('usdValue', 0))
-                               for coin in fund_coins)
+        if wallet_balance_fund and wallet_balance_fund.get('balance'):
+            fund_coins = wallet_balance_fund['balance']
+            for coin in fund_coins:
+                usd_value = float(coin.get('usdValue', 0))
+                fund_balance += usd_value
 
         # 2. Total Balance = UNIFIED + FUND
         total_balance = unified_balance + fund_balance
@@ -462,6 +464,7 @@ class DataProcessor:
                         f"   - Processing {len(unified_coins)} UNIFIED wallet coins...")
                     for coin in unified_coins:
                         try:
+                            coin_name = coin.get('coin', '')
                             wallet_balance_value = float(
                                 coin.get('walletBalance', 0))
                             usd_value = float(coin.get('usdValue', 0))
@@ -469,7 +472,7 @@ class DataProcessor:
                             # Only include coins with positive balance
                             if wallet_balance_value > 0:
                                 assets_with_balance.append({
-                                    'coin': coin.get('coin', ''),
+                                    'coin': coin_name,
                                     'wallet': 'UNIFIED',
                                     'walletBalance': wallet_balance_value,
                                     'usdValue': usd_value
@@ -482,31 +485,30 @@ class DataProcessor:
 
         # Process FUND wallet coins
         if wallet_balance_fund:
-            account_list = wallet_balance_fund.get('list', [])
-            if account_list:
-                fund_coins = account_list[0].get('coin', [])
-                if fund_coins:
-                    print(
-                        f"   - Processing {len(fund_coins)} FUND wallet coins...")
-                    for coin in fund_coins:
-                        try:
-                            wallet_balance_value = float(
-                                coin.get('walletBalance', 0))
-                            usd_value = float(coin.get('usdValue', 0))
+            fund_coins = wallet_balance_fund.get('balance', [])
+            if fund_coins:
+                print(
+                    f"   - Processing {len(fund_coins)} FUND wallet coins...")
+                for coin in fund_coins:
+                    try:
+                        coin_name = coin.get('coin', '')
+                        wallet_balance_value = float(
+                            coin.get('walletBalance', 0))
+                        usd_value = float(coin.get('usdValue', 0))
 
-                            # Only include coins with positive balance
-                            if wallet_balance_value > 0:
-                                assets_with_balance.append({
-                                    'coin': coin.get('coin', ''),
-                                    'wallet': 'FUND',
-                                    'walletBalance': wallet_balance_value,
-                                    'usdValue': usd_value
-                                })
-                                total_usd_value += usd_value
-                        except (ValueError, TypeError) as e:
-                            print(
-                                f"⚠️  Error processing FUND balance for {coin.get('coin', 'Unknown')}: {e}")
-                            continue
+                        # Only include coins with positive balance
+                        if wallet_balance_value > 0:
+                            assets_with_balance.append({
+                                'coin': coin_name,
+                                'wallet': 'FUND',
+                                'walletBalance': wallet_balance_value,
+                                'usdValue': usd_value
+                            })
+                            total_usd_value += usd_value
+                    except (ValueError, TypeError) as e:
+                        print(
+                            f"⚠️  Error processing FUND balance for {coin.get('coin', 'Unknown')}: {e}")
+                        continue
 
         # Calculate percentages based on combined USD value and format data
         asset_allocation = []

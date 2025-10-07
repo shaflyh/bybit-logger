@@ -48,9 +48,6 @@ class BybitService:
         """
         Get wallet balance for specified account type.
 
-        Args:
-            account_type: Account type - "UNIFIED" (default), "FUND", "CONTRACT", or "SPOT"
-
         Returns:
             Wallet balance data or None if error
         """
@@ -73,8 +70,85 @@ class BybitService:
             return None
 
     def get_funding_wallet_balance(self) -> Optional[Dict]:
-        """Get funding wallet balance (convenience method)"""
-        return self.get_wallet_balance(account_type="FUND")
+        """
+        Get funding wallet balance using get_coins_balance endpoint.
+        Enriches the response with USD values by fetching spot prices.
+
+        Returns:
+            Funding wallet balance data with usdValue added to each coin
+        """
+        print("💰 Fetching FUND wallet balance...")
+        try:
+            response = self.session.get_coins_balance(accountType="FUND")
+
+            if response.get('retCode') != 0:
+                print(f"❌ API Error: {response.get('retMsg')}")
+                return None
+
+            result = response.get('result')
+            if not result:
+                return None
+
+            # Enrich with USD values
+            balance_list = result.get('balance', [])
+            stablecoins = ['USDT', 'USDC', 'BUSD', 'DAI', 'FDUSD']
+
+            print(
+                f"   📊 Enriching {len(balance_list)} coins with USD values...")
+
+            for coin_data in balance_list:
+                coin_name = coin_data.get('coin', '')
+                wallet_balance = float(coin_data.get('walletBalance', 0))
+
+                # Skip coins with zero balance
+                if wallet_balance == 0:
+                    coin_data['usdValue'] = '0'
+                    continue
+
+                # Stablecoins are 1:1
+                if coin_name in stablecoins:
+                    coin_data['usdValue'] = str(wallet_balance)
+                else:
+                    # Fetch spot price
+                    try:
+                        symbol = f"{coin_name}USDT"
+                        ticker_response = self.session.get_tickers(
+                            category="spot",
+                            symbol=symbol
+                        )
+
+                        if ticker_response.get('retCode') == 0 and ticker_response.get('result', {}).get('list'):
+                            ticker = ticker_response['result']['list'][0]
+                            last_price = float(ticker.get('lastPrice', 0))
+
+                            if last_price > 0:
+                                usd_value = wallet_balance * last_price
+                                coin_data['usdValue'] = str(usd_value)
+                                print(
+                                    f"      ✅ {coin_name}: {wallet_balance} × ${last_price} = ${usd_value:.2f}")
+                            else:
+                                coin_data['usdValue'] = '0'
+                                print(
+                                    f"      ⚠️  {coin_name}: No valid price found")
+                        else:
+                            coin_data['usdValue'] = '0'
+                            print(
+                                f"      ⚠️  {coin_name}: Could not fetch price")
+                    except Exception as e:
+                        coin_data['usdValue'] = '0'
+                        print(
+                            f"      ⚠️  {coin_name}: Error fetching price - {e}")
+
+                # Small delay to avoid rate limiting
+                time.sleep(0.2)
+
+            # Log the enriched response
+            self.log_response(result, 'wallet_balance_fund')
+
+            return result
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            return None
 
     def get_futures_executions_with_positions(self, days_back: Optional[int] = None) -> Tuple[List[Dict], List[Dict]]:
         """Get futures executions and closed positions with proper timing"""
@@ -99,8 +173,8 @@ class BybitService:
             start_timestamp = int(current_start.timestamp() * 1000)
             end_timestamp = int(current_end.timestamp() * 1000)
 
-            print(
-                f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
+            # print(
+            #     f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
 
             # Get execution history for this chunk
             try:
@@ -115,9 +189,9 @@ class BybitService:
                     chunk_executions = response.get(
                         'result', {}).get('list', [])
                     all_executions.extend(chunk_executions)
-                    if chunk_executions:
-                        print(
-                            f"    ✅ Found {len(chunk_executions)} executions in this chunk")
+                    # if chunk_executions:
+                    #     print(
+                    #         f"    ✅ Found {len(chunk_executions)} executions in this chunk")
                 else:
                     print(
                         f"    ⚠️  API Error for executions: {response.get('retMsg')}")
@@ -138,9 +212,9 @@ class BybitService:
                     chunk_positions = response.get(
                         'result', {}).get('list', [])
                     all_positions.extend(chunk_positions)
-                    if chunk_positions:
-                        print(
-                            f"    ✅ Found {len(chunk_positions)} positions in this chunk")
+                    # if chunk_positions:
+                    #     print(
+                    #         f"    ✅ Found {len(chunk_positions)} positions in this chunk")
                 else:
                     print(
                         f"    ⚠️  API Error for positions: {response.get('retMsg')}")
@@ -210,8 +284,8 @@ class BybitService:
             start_timestamp = int(current_start.timestamp() * 1000)
             end_timestamp = int(current_end.timestamp() * 1000)
 
-            print(
-                f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
+            # print(
+            #     f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
 
             try:
                 response = self.session.get_executions(
@@ -224,9 +298,9 @@ class BybitService:
                 if response.get('retCode') == 0:
                     chunk_trades = response.get('result', {}).get('list', [])
                     all_trades.extend(chunk_trades)
-                    if chunk_trades:
-                        print(
-                            f"    ✅ Found {len(chunk_trades)} trades in this chunk")
+                    # if chunk_trades:
+                    #     print(
+                    #         f"    ✅ Found {len(chunk_trades)} trades in this chunk")
                 else:
                     print(f"    ⚠️  API Error: {response.get('retMsg')}")
             except Exception as e:
@@ -266,8 +340,8 @@ class BybitService:
             start_timestamp = int(current_start.timestamp() * 1000)
             end_timestamp = int(current_end.timestamp() * 1000)
 
-            print(
-                f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
+            # print(
+            #     f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
 
             # Get deposits for this chunk
             try:
@@ -279,9 +353,9 @@ class BybitService:
                 if response.get('retCode') == 0:
                     chunk_deposits = response.get('result', {}).get('rows', [])
                     all_deposits.extend(chunk_deposits)
-                    if chunk_deposits:
-                        print(
-                            f"    ✅ Found {len(chunk_deposits)} deposits in this chunk")
+                    # if chunk_deposits:
+                    #     print(
+                    #         f"    ✅ Found {len(chunk_deposits)} deposits in this chunk")
                 else:
                     print(
                         f"    ⚠️  API Error for deposits: {response.get('retMsg')}")
@@ -301,9 +375,9 @@ class BybitService:
                     chunk_withdrawals = response.get(
                         'result', {}).get('rows', [])
                     all_withdrawals.extend(chunk_withdrawals)
-                    if chunk_withdrawals:
-                        print(
-                            f"    ✅ Found {len(chunk_withdrawals)} withdrawals in this chunk")
+                    # if chunk_withdrawals:
+                    #     print(
+                    #         f"    ✅ Found {len(chunk_withdrawals)} withdrawals in this chunk")
                 else:
                     print(
                         f"    ⚠️  API Error for withdrawals: {response.get('retMsg')}")
@@ -353,8 +427,8 @@ class BybitService:
             start_timestamp = int(current_start.timestamp() * 1000)
             end_timestamp = int(current_end.timestamp() * 1000)
 
-            print(
-                f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
+            # print(
+            #     f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
 
             try:
                 response = self.session.get_internal_deposit_records(
@@ -366,9 +440,9 @@ class BybitService:
                 if response.get('retCode') == 0:
                     chunk_deposits = response.get('result', {}).get('rows', [])
                     all_deposits.extend(chunk_deposits)
-                    if chunk_deposits:
-                        print(
-                            f"    ✅ Found {len(chunk_deposits)} internal deposits in this chunk")
+                    # if chunk_deposits:
+                    #     print(
+                    #         f"    ✅ Found {len(chunk_deposits)} internal deposits in this chunk")
                 else:
                     print(f"    ⚠️  API Error: {response.get('retMsg')}")
             except Exception as e:
@@ -412,8 +486,8 @@ class BybitService:
             start_timestamp = int(current_start.timestamp() * 1000)
             end_timestamp = int(current_end.timestamp() * 1000)
 
-            print(
-                f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
+            # print(
+            #     f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
 
             try:
                 response = self.session.get_internal_transfer_records(
@@ -426,9 +500,9 @@ class BybitService:
                     chunk_transfers = response.get(
                         'result', {}).get('list', [])
                     all_transfers.extend(chunk_transfers)
-                    if chunk_transfers:
-                        print(
-                            f"    ✅ Found {len(chunk_transfers)} transfers in this chunk")
+                    # if chunk_transfers:
+                    #     print(
+                    #         f"    ✅ Found {len(chunk_transfers)} transfers in this chunk")
                 else:
                     print(f"    ⚠️  API Error: {response.get('retMsg')}")
             except Exception as e:
@@ -472,8 +546,8 @@ class BybitService:
             start_timestamp = int(current_start.timestamp() * 1000)
             end_timestamp = int(current_end.timestamp() * 1000)
 
-            print(
-                f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
+            # print(
+            #     f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
 
             try:
                 response = self.session.get_universal_transfer_records(
@@ -486,9 +560,9 @@ class BybitService:
                     chunk_transfers = response.get(
                         'result', {}).get('list', [])
                     all_transfers.extend(chunk_transfers)
-                    if chunk_transfers:
-                        print(
-                            f"    ✅ Found {len(chunk_transfers)} universal transfers in this chunk")
+                    # if chunk_transfers:
+                    #     print(
+                    #         f"    ✅ Found {len(chunk_transfers)} universal transfers in this chunk")
                 else:
                     print(f"    ⚠️  API Error: {response.get('retMsg')}")
             except Exception as e:
@@ -536,8 +610,8 @@ class BybitService:
                         break
 
                     all_conversions.extend(conversions)
-                    print(
-                        f"    ✅ Found {len(conversions)} conversions on page {page}")
+                    # print(
+                    #     f"    ✅ Found {len(conversions)} conversions on page {page}")
 
                     # If we got less than the limit, we've reached the end
                     if len(conversions) < limit:
