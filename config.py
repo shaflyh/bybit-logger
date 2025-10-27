@@ -17,9 +17,10 @@ class Config:
     GOOGLE_SPREADSHEET_NAME = os.getenv("GOOGLE_SPREADSHEET_NAME", "Bybit Trading Log")
     
     # Data Collection Settings
-    DAYS_BACK = int(os.getenv("DAYS_BACK", "7"))
-    SPOT_HISTORY_START_DATE = os.getenv("SPOT_HISTORY_START_DATE", "2025-10-03")  # Format: YYYY-MM-DD
+    SPOT_HISTORY_START_DATE = os.getenv("SPOT_HISTORY_START_DATE", "2025-09-28")  # Format: YYYY-MM-DD
+    FUTURES_HISTORY_START_DATE = os.getenv("SPOT_HISTORY_START_DATE", "2025-09-28")  # Format: YYYY-MM-DD
     PORTFOLIO_START_DATE = os.getenv("PORTFOLIO_START_DATE", "2025-09-28")  # Format: YYYY-MM-DD - For portfolio overview calculations
+    TRANSFER_START_DATE = os.getenv("SPOT_HISTORY_START_DATE", "2025-09-28")  # Format: YYYY-MM-DD
     
     # User Settings
     USER_EMAIL = os.getenv("USER_EMAIL")
@@ -66,6 +67,5 @@ class Config:
         print(f"   Google Credentials: {cls.GOOGLE_CREDENTIALS_FILE}")
         print(f"   Spreadsheet ID: {cls.GOOGLE_SPREADSHEET_ID or 'Using name instead'}")
         print(f"   Spreadsheet Name: {cls.GOOGLE_SPREADSHEET_NAME}")
-        print(f"   Data Range: {cls.DAYS_BACK} days back for all data types")
         print(f"   Auto Clear: {cls.AUTO_CLEAR_SHEETS}")
         print(f"   Formatting: {cls.ENABLE_FORMATTING}")

@@ -150,14 +150,18 @@ class BybitService:
             print(f"❌ Error: {e}")
             return None
 
-    def get_futures_executions_with_positions(self, days_back: Optional[int] = None) -> Tuple[List[Dict], List[Dict]]:
-        """Get futures executions and closed positions with proper timing"""
-        days_back = days_back or Config.DAYS_BACK
-        print(f"⚡ Fetching futures data (last {days_back} days)...")
+    def get_futures_executions_with_positions(self) -> Tuple[List[Dict], List[Dict]]:
+        """Get futures executions and closed positions from configured start date"""
+        try:
+            start_time = datetime.strptime(
+                Config.FUTURES_HISTORY_START_DATE, "%Y-%m-%d")
+        except ValueError:
+            print(
+                f"⚠️  Invalid FUTURES_HISTORY_START_DATE format. Using default (7 days back)")
+            start_time = end_time - timedelta(days=7)
 
         # Calculate date ranges in 7-day chunks
         end_time = datetime.now()
-        start_time = end_time - timedelta(days=days_back)
 
         all_executions = []
         all_positions = []
@@ -173,9 +177,6 @@ class BybitService:
             start_timestamp = int(current_start.timestamp() * 1000)
             end_timestamp = int(current_end.timestamp() * 1000)
 
-            # print(
-            #     f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
-
             # Get execution history for this chunk
             try:
                 response = self.session.get_executions(
@@ -189,9 +190,6 @@ class BybitService:
                     chunk_executions = response.get(
                         'result', {}).get('list', [])
                     all_executions.extend(chunk_executions)
-                    # if chunk_executions:
-                    #     print(
-                    #         f"    ✅ Found {len(chunk_executions)} executions in this chunk")
                 else:
                     print(
                         f"    ⚠️  API Error for executions: {response.get('retMsg')}")
@@ -212,9 +210,6 @@ class BybitService:
                     chunk_positions = response.get(
                         'result', {}).get('list', [])
                     all_positions.extend(chunk_positions)
-                    # if chunk_positions:
-                    #     print(
-                    #         f"    ✅ Found {len(chunk_positions)} positions in this chunk")
                 else:
                     print(
                         f"    ⚠️  API Error for positions: {response.get('retMsg')}")
@@ -236,15 +231,14 @@ class BybitService:
             f"✅ Total found: {len(all_executions)} futures executions, {len(all_positions)} closed positions")
         return all_executions, all_positions
 
-    def get_futures_positions(self, days_back: Optional[int] = None) -> List[Dict]:
+    def get_futures_positions(self) -> List[Dict]:
         """Get enhanced futures positions with proper timing"""
-        executions, positions = self.get_futures_executions_with_positions(
-            days_back)
+        executions, positions = self.get_futures_executions_with_positions()
         enhanced_positions = self.match_executions_to_positions(
             executions, positions)
         return enhanced_positions
 
-    def get_spot_trades(self, days_back: Optional[int] = None) -> List[Dict]:
+    def get_spot_trades(self) -> List[Dict]:
         """Get spot trading history starting from configured start date"""
         end_time = datetime.now()
 
@@ -284,9 +278,6 @@ class BybitService:
             start_timestamp = int(current_start.timestamp() * 1000)
             end_timestamp = int(current_end.timestamp() * 1000)
 
-            # print(
-            #     f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
-
             try:
                 response = self.session.get_executions(
                     category="spot",
@@ -298,9 +289,6 @@ class BybitService:
                 if response.get('retCode') == 0:
                     chunk_trades = response.get('result', {}).get('list', [])
                     all_trades.extend(chunk_trades)
-                    # if chunk_trades:
-                    #     print(
-                    #         f"    ✅ Found {len(chunk_trades)} trades in this chunk")
                 else:
                     print(f"    ⚠️  API Error: {response.get('retMsg')}")
             except Exception as e:
@@ -340,9 +328,6 @@ class BybitService:
             start_timestamp = int(current_start.timestamp() * 1000)
             end_timestamp = int(current_end.timestamp() * 1000)
 
-            # print(
-            #     f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
-
             # Get deposits for this chunk
             try:
                 response = self.session.get_deposit_records(
@@ -375,9 +360,6 @@ class BybitService:
                     chunk_withdrawals = response.get(
                         'result', {}).get('rows', [])
                     all_withdrawals.extend(chunk_withdrawals)
-                    # if chunk_withdrawals:
-                    #     print(
-                    #         f"    ✅ Found {len(chunk_withdrawals)} withdrawals in this chunk")
                 else:
                     print(
                         f"    ⚠️  API Error for withdrawals: {response.get('retMsg')}")
@@ -427,9 +409,6 @@ class BybitService:
             start_timestamp = int(current_start.timestamp() * 1000)
             end_timestamp = int(current_end.timestamp() * 1000)
 
-            # print(
-            #     f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
-
             try:
                 response = self.session.get_internal_deposit_records(
                     startTime=str(start_timestamp),
@@ -440,9 +419,6 @@ class BybitService:
                 if response.get('retCode') == 0:
                     chunk_deposits = response.get('result', {}).get('rows', [])
                     all_deposits.extend(chunk_deposits)
-                    # if chunk_deposits:
-                    #     print(
-                    #         f"    ✅ Found {len(chunk_deposits)} internal deposits in this chunk")
                 else:
                     print(f"    ⚠️  API Error: {response.get('retMsg')}")
             except Exception as e:
@@ -465,13 +441,16 @@ class BybitService:
 
     def get_internal_transfer_records(self, days_back: Optional[int] = None) -> List[Dict]:
         """Get internal transfer records between different account types"""
-        days_back = days_back or Config.DAYS_BACK
-        print(
-            f"💸 Fetching internal transfer records (last {days_back} days)...")
+        try:
+            start_time = datetime.strptime(
+                Config.TRANSFER_START_DATE, "%Y-%m-%d")
+        except ValueError:
+            print(
+                f"⚠️  Invalid TRANSFER_START_DATE format. Using default (7 days back)")
+            start_time = end_time - timedelta(days=7)
 
         # Calculate date ranges in 7-day chunks
         end_time = datetime.now()
-        start_time = end_time - timedelta(days=days_back)
 
         all_transfers = []
 
@@ -486,9 +465,6 @@ class BybitService:
             start_timestamp = int(current_start.timestamp() * 1000)
             end_timestamp = int(current_end.timestamp() * 1000)
 
-            # print(
-            #     f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
-
             try:
                 response = self.session.get_internal_transfer_records(
                     startTime=str(start_timestamp),
@@ -500,9 +476,6 @@ class BybitService:
                     chunk_transfers = response.get(
                         'result', {}).get('list', [])
                     all_transfers.extend(chunk_transfers)
-                    # if chunk_transfers:
-                    #     print(
-                    #         f"    ✅ Found {len(chunk_transfers)} transfers in this chunk")
                 else:
                     print(f"    ⚠️  API Error: {response.get('retMsg')}")
             except Exception as e:
@@ -525,13 +498,16 @@ class BybitService:
 
     def get_universal_transfer_records(self, days_back: Optional[int] = None) -> List[Dict]:
         """Get universal transfer records between different UIDs"""
-        days_back = days_back or Config.DAYS_BACK
-        print(
-            f"🌐 Fetching universal transfer records (last {days_back} days)...")
+        try:
+            start_time = datetime.strptime(
+                Config.TRANSFER_START_DATE, "%Y-%m-%d")
+        except ValueError:
+            print(
+                f"⚠️  Invalid TRANSFER_START_DATE format. Using default (7 days back)")
+            start_time = end_time - timedelta(days=7)
 
         # Calculate date ranges in 7-day chunks
         end_time = datetime.now()
-        start_time = end_time - timedelta(days=days_back)
 
         all_transfers = []
 
@@ -546,9 +522,6 @@ class BybitService:
             start_timestamp = int(current_start.timestamp() * 1000)
             end_timestamp = int(current_end.timestamp() * 1000)
 
-            # print(
-            #     f"  📅 Chunk {chunk_count}: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
-
             try:
                 response = self.session.get_universal_transfer_records(
                     startTime=str(start_timestamp),
@@ -560,9 +533,6 @@ class BybitService:
                     chunk_transfers = response.get(
                         'result', {}).get('list', [])
                     all_transfers.extend(chunk_transfers)
-                    # if chunk_transfers:
-                    #     print(
-                    #         f"    ✅ Found {len(chunk_transfers)} universal transfers in this chunk")
                 else:
                     print(f"    ⚠️  API Error: {response.get('retMsg')}")
             except Exception as e:
@@ -610,8 +580,6 @@ class BybitService:
                         break
 
                     all_conversions.extend(conversions)
-                    # print(
-                    #     f"    ✅ Found {len(conversions)} conversions on page {page}")
 
                     # If we got less than the limit, we've reached the end
                     if len(conversions) < limit:
