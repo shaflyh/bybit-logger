@@ -471,11 +471,18 @@ class DataProcessor:
 
                             # Only include coins with positive balance
                             if wallet_balance_value > 0:
+                                unrealised_pnl = float(
+                                    coin.get('unrealisedPnl', 0))
+                                cum_realised_pnl = float(
+                                    coin.get('cumRealisedPnl', 0))
+
                                 assets_with_balance.append({
                                     'coin': coin_name,
                                     'wallet': 'UNIFIED',
                                     'walletBalance': wallet_balance_value,
-                                    'usdValue': usd_value
+                                    'usdValue': usd_value,
+                                    'unrealisedPnl': unrealised_pnl,
+                                    'cumRealisedPnl': cum_realised_pnl
                                 })
                                 total_usd_value += usd_value
                         except (ValueError, TypeError) as e:
@@ -498,11 +505,14 @@ class DataProcessor:
 
                         # Only include coins with positive balance
                         if wallet_balance_value > 0:
+                            # FUND wallet doesn't have unrealisedPnl or cumRealisedPnl fields
                             assets_with_balance.append({
                                 'coin': coin_name,
                                 'wallet': 'FUND',
                                 'walletBalance': wallet_balance_value,
-                                'usdValue': usd_value
+                                'usdValue': usd_value,
+                                'unrealisedPnl': 0.0,
+                                'cumRealisedPnl': 0.0
                             })
                             total_usd_value += usd_value
                     except (ValueError, TypeError) as e:
@@ -521,6 +531,8 @@ class DataProcessor:
                 'USD Value': f"${asset['usdValue']:.2f}",
                 'Percentage': f"{percentage:.2f}%",
                 'Wallet': asset['wallet'],
+                'Unrealised PnL': f"{asset['unrealisedPnl']:+.8f}".rstrip('0').rstrip('.') if asset['unrealisedPnl'] != 0 else "0",
+                'Cumulative Realised PnL': f"{asset['cumRealisedPnl']:+.8f}".rstrip('0').rstrip('.') if asset['cumRealisedPnl'] != 0 else "0",
                 '_usd_value': asset['usdValue'],  # For sorting
                 '_percentage_value': percentage  # For chart
             })

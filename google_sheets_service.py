@@ -367,20 +367,23 @@ class GoogleSheetsService:
             # Add asset allocation if provided
             if asset_allocation:
                 # Empty row for spacing
-                rows_to_write.append(["", "", "", "", ""])
-                rows_to_write.append(["Asset Allocation", "", "", "", ""])
-                # Add column headers for asset allocation (Wallet moved to last)
+                rows_to_write.append(["", "", "", "", "", "", ""])
                 rows_to_write.append(
-                    ["Coin", "Balance", "USD Value", "Percentage", "Wallet"])
+                    ["Asset Allocation", "", "", "", "", "", ""])
+                # Add column headers for asset allocation with new PnL columns
+                rows_to_write.append(
+                    ["Coin", "Balance", "USD Value", "Percentage", "Wallet", "Unrealised PnL", "Cumulative Realised PnL"])
 
-                # Add asset allocation data (Wallet moved to last)
+                # Add asset allocation data with new PnL columns
                 for asset in asset_allocation:
                     rows_to_write.append([
                         asset.get('Coin', ''),
                         asset.get('Balance', ''),
                         asset.get('USD Value', ''),
                         asset.get('Percentage', ''),
-                        asset.get('Wallet', '')
+                        asset.get('Wallet', ''),
+                        asset.get('Unrealised PnL', ''),
+                        asset.get('Cumulative Realised PnL', '')
                     ])
 
             worksheet.update(
@@ -410,8 +413,8 @@ class GoogleSheetsService:
                 worksheet.format(f'A{asset_title_row}', {
                                  'textFormat': {'bold': True, 'fontSize': 12}})
 
-                # Bold and style the column headers (A through E now, including Wallet)
-                worksheet.format(f'A{asset_header_row}:E{asset_header_row}', {
+                # Bold and style the column headers (A through G now)
+                worksheet.format(f'A{asset_header_row}:G{asset_header_row}', {
                     'textFormat': {'bold': True},
                     'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
                 })
@@ -495,8 +498,8 @@ class GoogleSheetsService:
                             "anchorCell": {
                                 "sheetId": worksheet.id,
                                 "rowIndex": 7,  # Position chart at row 8
-                                # Column G
-                                "columnIndex": 6
+                                # Column I
+                                "columnIndex": 8
                             },
                             "offsetXPixels": 20,
                             "offsetYPixels": 20,
